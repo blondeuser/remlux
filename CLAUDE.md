@@ -1,129 +1,94 @@
 # REMLUX
 
-## Project
+Web app for calculating and visualizing how light spreads in a room, with downlights organized in groups, in the spirit of DIALux. For early lighting layout; final results get confirmed in DIALux with the real IES/LDT files.
 
-REMLUX is a web app for calculating and visualizing how light spreads in a room, with luminaires organized in groups, in the spirit of DIALux. It is meant for early lighting layout; final results get confirmed in DIALux with the real IES/LDT files.
+This file is the project's **memory**: stable facts, conventions and rules. Status, roadmap, history and open issues are in **`PROGRESS.md`**.
 
-Stack: Vite + TypeScript (strict) + Tailwind CSS v4 (`@tailwindcss/vite`) + Vitest (jsdom). No runtime JS dependencies; only Google Fonts (Doto, JetBrains Mono).
+## Working rules
 
-### Styling (Tailwind v4)
-- `src/styles.css` holds everything: `@theme` tokens, `@layer base` element defaults, `@layer components` for pieces the script builds as HTML strings or toggles by class. No `tailwind.config.js` (v4 is CSS-first).
-- Only the project palette exists (default Tailwind colours are switched off): `paper` (page), `panel`, `raise`, `ink` (text), `mute`, `rule` (borders), `beam` (light/amber), `accent` (blue), `accent2` (purple), `ok`, `bad`. Use `bg-panel`, `text-mute`, `border-rule`… never raw hex in markup.
-- Fonts: `font-mono` (JetBrains Mono, the body font), `font-display` (Doto, the logo). Breakpoints: `sm` = 560px, `md` = 840px (sidebar layout); `max-[480px]:` for small phones.
-- The script writes `var(--ink)`, `var(--panel)`, `var(--accent)`… into inline SVG; those short aliases are defined in `:root` from the theme. Keep them when renaming tokens.
-- Static layout in `index.html` uses utilities. Keep component classes for script-generated markup: `panel`, `note`, `err`, `chip` (`aria-pressed=true` = selected), `actions`, `results`/`res`/`res hero`, `glist`/`grow`/`gsel`/`gtog`, `saved`, `stage`, `planwrap`, `upd`/`primary`, `pblur`, `num`.
-- Hook classes the script queries; don't remove: `.tab`, `.legend`, `.upd`, `.grpHost`, `.grow`, `.gsel`, `.gname`, `[data-l]`.
-- The Tailwind migration was checked pixel-for-pixel against the original HTML in Edge (4 pages × 2 widths × 2 states: identical except the fixed textarea overflow below). Node.js is at `C:\Program Files\nodejs` (may need adding to PATH in Git Bash: `export PATH="/c/Program Files/nodejs:$PATH"`).
+- **Start of a session:** read `PROGRESS.md` to see the current phase and next tasks.
+- **End of a session (or after each finished task):** update `PROGRESS.md`: tick tasks, add a dated log entry with the commit hash, record new decisions and known issues, bump "Last updated". Keep this file (`CLAUDE.md`) for things that stay true; update it only when a convention or the architecture changes.
+- **Never change calculation results by accident.** Engine arithmetic is locked by tests. If a refactor moves a number, stop and find out why before touching the test.
+- **Verify UI changes visually.** For refactors that should not change the look, compare screenshots before/after (see "Verification" below).
+- **Run `npm test` and `npm run typecheck` before every commit.** Commit in small steps that each leave the app working.
+- **Direct light only.** Room surfaces / reflectance and radiosity were removed at the user's request. Don't reintroduce them unless asked.
 
-### Commands
+## Environment
+
+- Windows; Node.js at `C:\Program Files\nodejs`. In Git Bash it may not be on PATH: `export PATH="/c/Program Files/nodejs:$PATH"`.
+- Browsers for visual checks: Edge (`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`), Chrome.
+
+## Commands
+
 - `npm run dev`: dev server with live reload (http://localhost:5173).
-- `npm test`: Vitest. Run after every change to the maths.
+- `npm test`: Vitest (engine unit tests + app smoke test).
 - `npm run typecheck`: `tsc --noEmit`.
-- `npm run build`: static site in `dist/` (deploy anywhere static).
-- `npm run build:single`: one self-contained `dist-single/index.html` (like the original single-file app; good for sharing or publishing as an artifact).
+- `npm run build`: static site in `dist/`.
+- `npm run build:single`: one self-contained `dist-single/index.html` (portable, like the original single-file app).
 
-### Layout
-- `index.html`: markup only (the four pages).
-- `src/styles.css`: all CSS.
+## Stack
+
+Vite + TypeScript (strict) + Tailwind CSS v4 (`@tailwindcss/vite`) + Vitest (jsdom). No runtime JS dependencies; only Google Fonts (Doto, JetBrains Mono).
+
+## Architecture
+
+- `index.html`: markup for the four pages (Tailwind utilities).
 - `src/main.ts`: entry; imports the CSS and the app.
-- `src/engine/`: the calculation engine. Pure TypeScript (strict), no DOM, fully unit-tested. Import from `src/engine/index.ts`.
+- `src/styles.css`: Tailwind theme, base and component styles (see Styling).
+- `src/engine/`: **calculation engine**. Pure TypeScript, no DOM, fully unit-tested. Import from `src/engine/index.ts`.
   - `types.ts`: `Pt`, `Poly`, `IntensityFn` (cd vs cos γ), `Formation`.
-  - `geometry.ts`: `rectPoly`, `inPoly`, `polyArea`, `polyPerim`, `isConvex`, `edgeDist`, `crosses` (wall blocks a line of sight), `inwardN`, `insetPoly`, `isSimple`, `shapePreset` (L/T/U), `normalizePoly`.
-  - `photometry.ts`: `parseIES` (LM-63, Type C, C-planes averaged), `iesIntensity`, `buildModel` (IES or cosⁿ fitted to beam angle → `Iof` lookup table, beam/field half-angles), `rad`/`deg`.
+  - `geometry.ts`: `rectPoly`, `inPoly`, `polyArea`, `polyPerim`, `isConvex`, `edgeDist`, `crosses` (a wall blocks a line of sight), `inwardN`, `insetPoly`, `isSimple`, `shapePreset` (L/T/U), `normalizePoly`.
+  - `photometry.ts`: `parseIES` (LM-63, Type C, C-planes averaged), `iesIntensity`, `buildModel` (IES or cosⁿ fitted to the beam angle → `Iof` lookup table, beam/field half-angles), `rad`/`deg`.
   - `layout.ts`: `layout` (grid/stagger/hex/perim in a box), `placeLights` (clipped to the room shape), `placeIn` (whole room or a group's area), `areaOf`.
-  - `illuminance.ts`: `illuminanceAt` (one fixture, E = I·cos³γ/h²), `directIlluminance` (all lights, walls block in non-convex rooms), `sampleWorkPlane` (grid + Ē/Emin/Emax/U₀ excluding the wall zone), `wallZoneWidth`, `wallScallops`.
+  - `illuminance.ts`: `illuminanceAt` (one fixture, E = I·cos³γ/h²), `directIlluminance` (all lights; walls block in non-convex rooms), `sampleWorkPlane` (grid + Ē/Emin/Emax/U₀ excluding the wall zone), `wallZoneWidth`, `wallScallops`.
   - `suggest.ts`: `suggestGrid` (fewest fixtures reaching the target with U₀ ≥ 0.5).
-  - Convention: `shape: Poly | null` where `null` means a plain L × W rectangle (no clipping). Keep the arithmetic exactly as is unless a change is intended; results are locked by tests.
-- `src/legacy/app.js`: UI, state, drawing and event wiring (plain JS, not type-checked, ES module in strict mode). Imports the engine; `model()`, `placeLights()`, `placeIn()`, `wzone()`, `normPoly()`, `suggest()` are thin wrappers that read on-screen inputs and the global `poly`. Still to split into `src/render/`, `src/ui/`, `src/state/`. New code goes in TypeScript in those folders, not in `legacy/`.
-- `tests/engine/*.test.ts`: unit tests of the physics (flux conservation, 50%/10% beam edges, inverse-square/cos³, wall blocking, layouts, Suggest). `tests/fixtures/*.ies`: small IES files.
-- `tests/app.smoke.test.ts`: boots the whole app with defaults and checks the headline numbers (330 lx avg, U 0.74, 405 lx wall peak, Suggest 4 × 3). If a refactor changes these, the maths changed; investigate before updating them.
-- `REMLUX_MD.md`: the app's UI text and method notes as plain Markdown (a copy of the page's copy, not code).
-- The original `REMLUX_HTML.html` is in git history (first commit).
+  - Convention: `shape: Poly | null`, where `null` means a plain L × W rectangle (no clipping).
+- `src/legacy/app.js`: UI, state, drawing and events (plain JS, not type-checked, ES module). Imports the engine through thin wrappers (`model`, `placeLights`, `placeIn`, `wzone`, `normPoly`, `suggest`) that read on-screen inputs and the global `poly`. Being split into `src/state/`, `src/render/`, `src/ui/` (see `PROGRESS.md`). **New code goes in TypeScript in those folders, not in `legacy/`.**
+  - `calc()`: main calculation + render pass. Groups: `groups`, `act`, `renderGroups`, `snapGroup`, `saveActive`, `loadGroup`, `groupLights`. Drawing: `drawDims`, `drawSection`, `drawOne`, `drawWall`, `ramp` (false-colour scale).
+  - Persistence: `localStorage` keys `dlc:last` (last state) and `dlc:rooms` (saved rooms). Old saves must keep loading.
+- `tests/engine/*.test.ts`: physics unit tests. `tests/fixtures/*.ies`: small IES files. `tests/app.smoke.test.ts`: boots the app and checks the default-room headline numbers.
+- `REMLUX_MD.md`: the app's UI text and method notes as Markdown (copy of the page text, not code).
 
-### Refactor plan (in order, app working after each step)
-1. ~~git~~ ✓  2. ~~Vite + TS scaffold~~ ✓  3. ~~Maths into `src/engine/` with tests~~ ✓ (verified identical output to the original app across 9 scenarios: L/U/T rooms, hex/stagger/perimeter, fixed spacing, IES, custom points, multiple groups with areas)
-4. Split rendering and UI into modules; version the localStorage state so old saved rooms keep loading.
-5. Static hosting (Cloudflare Pages / Netlify / GitHub Pages), optional PWA for offline use.
-6. New features: LDT files, full C-plane IES, PDF export.
+### App pages
+Four pages (`room`, `fixture`, `visualize`, `stats`, switched by `showPage`, URL hash):
+- **Room**: shape (rectangle, L/T/U presets, or custom polygon), length/width/height, work plane height, wall zone excluded (EN 12464-1: 0.5 m), saved rooms.
+- **Fixture**: per group: IES file or generic cosⁿ beam, beam angle, lumens, optional watts, downlight radius; one-downlight views.
+- **Visualize**: groups, formation, placement area, columns/rows or spacing, Suggest; floor plan heatmap (`#cv` canvas + `#ov` SVG; lights draggable → Custom layout), section, wall scallops (`#wcv` / `#wov`).
+- **Stats**: results, work plane table (Ē, Emin, Emax, U₀, Ud), lux histogram, each downlight, spec summary, method.
 
-### App structure
-Four pages (`PAGES = ['room','fixture','visualize','stats']`, switched by `showPage`):
-- **Room**: shape (rectangle, presets, or custom polygon from corner coordinates), length/width/height, work plane height, wall zone excluded (EN 12464-1: 0.5 m), saved rooms.
-- **Fixture**: per group: light distribution (loaded IES file or generic cosⁿ fitted to beam angle), lumens, optional watts, downlight radius; grid formation, placement rectangle, columns/rows or spacing; "Suggest a grid for a target" lux.
-- **Visualize**: floor plan heatmap (`#cv` canvas + `#ov` SVG overlay; lights draggable → switches layout to Custom), section along the length, wall scallops (`#wcv` / `#wov`).
-- **Stats**: work plane table (Ē, Emin, Emax, U₀ = Emin/Ē, Ud = Emin/Emax), lux distribution, each downlight, spec summary, method.
+## Reference numbers (default room)
 
-### Key functions in `src/legacy/app.js` (engine functions are listed under Layout above)
-- `calc()`: main calculation + render pass.
-- `model(q)`: wraps `buildModel` for the selected group (on-screen inputs) or a stored group `q`.
-- Groups: `groups`, `act`, `renderGroups`, `snapGroup`, `saveActive`, `loadGroup`, `groupLights`.
-- `suggest()`: validates inputs, calls `suggestGrid`, renders the result.
-- `normPoly()`: wraps `normalizePoly`, shifts custom points, updates Length/Width inputs.
-- Drawing: `drawDims`, `drawSection`, `drawOne`, `drawWall`, `ramp` (false-colour scale).
-- Persistence: `localStorage` keys `dlc:last` (last state) and `dlc:rooms` (saved rooms).
+6 × 4.5 × 2.8 m, 4 × 3 grid, 800 lm, 36° → **330 lx avg, Emin 244, Emax 378, U₀ 0.74**; 241 lx under one fixture; wall scallop peak 405 lx; Suggest for 300 lx → 4 × 3 (≈332 lx). These are locked in `tests/app.smoke.test.ts`.
 
-### Model limits
-Direct light only. Room surfaces / reflectance and the radiosity (reflected light) calculation were removed on 2026-11-10 at the user's request; don't reintroduce them unless asked.
+## Styling (Tailwind v4)
 
-## Installed skills
+- Everything is in `src/styles.css`: `@theme` tokens, `@layer base` element defaults, `@layer components` for pieces the script builds as HTML strings or toggles by class. No `tailwind.config.js` (v4 is CSS-first).
+- **Only the project palette exists** (Tokyo Night; default Tailwind colours are switched off): `paper` (page), `panel`, `raise`, `ink` (text), `mute`, `rule` (borders), `beam` (light/amber), `accent` (blue), `accent2` (purple), `ok`, `bad`. Use `bg-panel`, `text-mute`, `border-rule`…, never raw hex in markup.
+- Fonts: `font-mono` (JetBrains Mono, body), `font-display` (Doto, logo). Breakpoints: `sm` = 560px, `md` = 840px (sidebar layout); `max-[480px]:` for small phones.
+- The script writes `var(--ink)`, `var(--panel)`, `var(--accent)`… into inline SVG; those short aliases are defined in `:root` from the theme. Keep them when renaming tokens.
+- Component classes for script-generated markup: `panel`, `note`, `err`, `chip` (`aria-pressed=true` = selected), `actions`, `results`/`res`/`res hero`, `glist`/`grow`/`gsel`/`gtog`, `saved`, `stage`, `planwrap`, `upd`/`primary`, `pblur`, `num`.
+- Hook classes the script queries (don't remove): `.tab`, `.legend`, `.upd`, `.grpHost`, `.grow`, `.gsel`, `.gname`, `[data-l]`.
+- Gotchas found during the migration: Chrome's `<details>` content wrapper breaks `box-sizing: inherit`; Vite's default CSS minifier once dropped `backdrop-filter: blur(var(--b))`.
 
-All skills are installed at project level in `.agents/skills/`, symlinked into `.claude/skills/` for Claude Code. Invoke with `/<skill-name>` or let them trigger automatically.
+## Verification
 
-### Restoring agent tooling
-`.agents/`, `.codex/`, `.claude/skills/`, `.claude/agents/` and `.claude/settings.local.json` are git-ignored (machine-local). On a fresh clone: `npx skills experimental_install` (restores the skills listed in `skills-lock.json`), then `npx impeccable install` (impeccable skill, agents and hooks).
+- **Numbers:** `npm test`. For bigger refactors, also compare the app's output field by field against the previous version in several scenarios (shaped rooms, each formation, IES, custom points, multiple groups with areas).
+- **Look:** full-page screenshots in Edge with Playwright-core (4 pages × 400/1280 px × default and multi-group states), compared with pixelmatch. Wait for the web fonts explicitly (`document.fonts.load(...)`) or text renders in the fallback font and every screenshot "differs". Compare against the original file in git (`git show b9c82f2:REMLUX_HTML.html`) when in doubt.
 
-### emilkowalski/skills (18)
-Install: `npx skills@latest add emilkowalski/skills`
+## Agent tooling
+
+Installed at project level and git-ignored (machine-local): `.agents/`, `.codex/`, `.claude/skills/`, `.claude/agents/`, `.claude/settings.local.json`. Restore on a fresh clone: `npx skills experimental_install` (skills in `skills-lock.json`), then `npx impeccable install`. Manage with `npx skills list | update | remove <name>`.
 
 | Skill | Use for |
 |---|---|
-| `animate` | Build a web animation from scratch: whether to animate, purpose, tool, properties, curve, duration, interruption, exit. |
-| `animate-expo` | Animations in React Native / Expo (Reanimated, Gesture Handler, Expo Router, haptics). |
-| `animation-performance` | Keep web animations in the frame budget; fix jank and dropped frames. |
-| `animation-vocabulary` | Name a motion effect from a vague description ("the bouncy popover thing" → Pop in). |
-| `apple-design` | Apple-style interface design and fluid physical motion, for the web. |
-| `ask-sonner` | Sonner (React toast library) setup, usage and troubleshooting. |
-| `break-ui` | Stress-test UI with worst-case data and report what breaks, with fixes. |
-| `choreograph` | Coordinate several elements animating together (stagger, sequence, hero entrance, morphs). |
-| `emil-design-eng` | Emil Kowalski's philosophy on UI polish, component design and animation decisions. |
-| `find-animation-opportunities` | Read-only search for places that should animate (and those that shouldn't). |
-| `gestures` | Drag, swipe and sheet interactions that track the finger 1:1 and stay interruptible. |
-| `improve-animations` | Read-only audit of a codebase's motion, with prioritized implementation plans. |
-| `mobile-native` | Make a web app feel native on phones (100vh bug, tap highlight, notch, input zoom, etc.). |
-| `pick-ui-library` | Pick the right frontend library from a curated list. Explicit invocation only. |
-| `prototype` | Build several distinct versions of a UI piece behind a live picker. Explicit invocation only. |
-| `remove-animations` | Remove unnecessary animations; subtract only. |
-| `review-animations` | Review motion code against a high craft bar. |
-| `write-swift` | Modern Swift: value types, Swift 6 concurrency, generics, API design, testing. |
+| `animate`, `choreograph`, `gestures`, `animation-performance` | Building and tuning web motion |
+| `review-animations`, `improve-animations`, `find-animation-opportunities`, `remove-animations` | Auditing motion (review, plan, find, subtract) |
+| `emil-design-eng`, `apple-design`, `mobile-native` | UI polish, Apple-style interaction, native feel on phones |
+| `break-ui` | Stress-test UI with worst-case data |
+| `animation-vocabulary`, `pick-ui-library`, `prototype` | Naming effects, choosing libraries, multi-variant prototypes (last two: explicit invocation only) |
+| `ask-sonner`, `animate-expo`, `write-swift` | Sonner toasts, React Native/Expo, Swift (not used in this project) |
+| `design-taste-frontend` | Anti-generic frontend design with a browser checker |
+| `impeccable` | Design, critique, audit, polish a frontend; `/impeccable init` sets up design context |
+| `stageshow` | Faux product UI stills and cursor demos |
 
-### Leonxlnx/taste-skill (1)
-Install: `npx skills add Leonxlnx/taste-skill`
-
-| Skill | Use for |
-|---|---|
-| `design-taste-frontend` | Anti-generic frontend design for landing pages and company/product sites, with a browser-based checker and finish gate. |
-
-### impeccable (1 skill + agents + hooks)
-Install: `npx impeccable install` (then run `/impeccable init` in chat to set up design context)
-
-| Skill | Use for |
-|---|---|
-| `impeccable` | Design, redesign, critique, audit, polish or animate a frontend: sites, dashboards, app UI, components, native screens, or a design system (DESIGN.md). |
-
-Also installed:
-- Subagents in `.claude/agents/`: `impeccable-asset-producer`, `impeccable-documenter`, `impeccable-finish-reviewer`, `impeccable-manual-edit-applier`.
-- Hooks in `.claude/settings.local.json`: runs the impeccable checker on SessionStart, after every Edit/Write (UI checks), and on Stop (design deep pass). Remove the `hooks` block to disable.
-
-### benjitaylor/skills (1)
-Install: `npx skills add benjitaylor/skills --skill stageshow`
-
-| Skill | Use for |
-|---|---|
-| `stageshow` | Faux product UI that looks real, as a still or an animated cursor demo: app/browser windows, dashboards, phones, terminals, bento grids. React and plain CSS. |
-
-## Managing skills
-
-- List: `npx skills list`
-- Update: `npx skills update`
-- Remove: `npx skills remove <name>`
-- Requires Node.js (installed v26.13.0 at `C:\Program Files\nodejs`).
+Sources: `emilkowalski/skills` (18), `Leonxlnx/taste-skill`, `impeccable` (also adds 4 subagents in `.claude/agents/` and hooks in `.claude/settings.local.json` that run its design checker on SessionStart, after Edit/Write, and on Stop), `benjitaylor/skills --skill stageshow`.
