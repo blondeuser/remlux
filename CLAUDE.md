@@ -2,16 +2,23 @@
 
 Web app for calculating and visualizing how light spreads in a room, with downlights organized in groups, in the spirit of DIALux. For early lighting layout; final results get confirmed in DIALux with the real IES/LDT files.
 
-This file is the project's **memory**: stable facts, conventions and rules. Status, roadmap, history and open issues are in **`PROGRESS.md`**.
+Project docs, one job each:
+
+| File | Holds | Update when |
+|---|---|---|
+| `CLAUDE.md` (this file) | Rules for working on the code: workflow, commands, stack, architecture, conventions, verification | A convention or the architecture changes |
+| `MEMORY.md` | Business logic: what the app calculates and how, domain rules, ranges, product decisions, reference numbers | A calculation, rule or product decision changes |
+| `PROGRESS.md` | Status, roadmap, backlog / known issues, dated log | After every finished task |
 
 ## Working rules
 
-- **Start of a session:** read `PROGRESS.md` to see the current phase and next tasks.
-- **End of a session (or after each finished task):** update `PROGRESS.md`: tick tasks, add a dated log entry with the commit hash, record new decisions and known issues, bump "Last updated". Keep this file (`CLAUDE.md`) for things that stay true; update it only when a convention or the architecture changes.
+- **Start of a session:** read `PROGRESS.md` (current phase, next tasks) and `MEMORY.md` (how the app is supposed to behave).
+- **End of a session (or after each finished task):** update `PROGRESS.md`: tick tasks, add a dated log entry with the commit hash, record known issues, bump "Last updated". Record new domain rules or product decisions in `MEMORY.md`.
+- **Business logic follows `MEMORY.md`.** If the code and `MEMORY.md` disagree, find out which is right before changing either.
 - **Never change calculation results by accident.** Engine arithmetic is locked by tests. If a refactor moves a number, stop and find out why before touching the test.
 - **Verify UI changes visually.** For refactors that should not change the look, compare screenshots before/after (see "Verification" below).
 - **Run `npm test` and `npm run typecheck` before every commit.** Commit in small steps that each leave the app working.
-- **Direct light only.** Room surfaces / reflectance and radiosity were removed at the user's request. Don't reintroduce them unless asked.
+- **Direct light only** (product decision, see `MEMORY.md`). Don't reintroduce room surfaces / reflectance unless asked.
 
 ## Environment
 
@@ -56,9 +63,9 @@ Four pages (`room`, `fixture`, `visualize`, `stats`, switched by `showPage`, URL
 - **Visualize**: groups, formation, placement area, columns/rows or spacing, Suggest; floor plan heatmap (`#cv` canvas + `#ov` SVG; lights draggable → Custom layout), section, wall scallops (`#wcv` / `#wov`).
 - **Stats**: results, work plane table (Ē, Emin, Emax, U₀, Ud), lux histogram, each downlight, spec summary, method.
 
-## Reference numbers (default room)
+## Reference numbers
 
-6 × 4.5 × 2.8 m, 4 × 3 grid, 800 lm, 36° → **330 lx avg, Emin 244, Emax 378, U₀ 0.74**; 241 lx under one fixture; wall scallop peak 405 lx; Suggest for 300 lx → 4 × 3 (≈332 lx). These are locked in `tests/app.smoke.test.ts`.
+The default-room numbers (330 lx avg, U₀ 0.74, …) are listed in `MEMORY.md` and locked in `tests/app.smoke.test.ts`.
 
 ## Styling (Tailwind v4)
 

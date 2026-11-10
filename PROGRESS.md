@@ -1,6 +1,6 @@
 # REMLUX: Progress
 
-Living status of the project. **Update this file at the end of every work session**: tick tasks, add a log entry, move items between sections. Stable facts and conventions live in `CLAUDE.md`, not here.
+Living status of the project. **Update this file at the end of every work session**: tick tasks, add a log entry, move items between sections. Rules and conventions live in `CLAUDE.md`; business logic (calculations, domain rules, product decisions) in `MEMORY.md`.
 
 _Last updated: 2026-11-11_
 
@@ -74,6 +74,7 @@ _Last updated: 2026-11-11_
 ## Log
 
 ### 2026-11-11
+- **Docs split into three**: `CLAUDE.md` (working rules, architecture, conventions), new `MEMORY.md` (business logic: lighting model, room/fixture/group/layout rules, Suggest criterion, product decisions, reference numbers), `PROGRESS.md` (progress).
 - **PROGRESS.md + CLAUDE.md split** (`8ac13cf`): progress tracking moved out of CLAUDE.md; CLAUDE.md now holds working rules, architecture, conventions, reference numbers and verification method.
 - **Tailwind CSS v4** (`3f306b9`): stylesheet rewritten as theme tokens + base + components; `index.html` layout in utilities. Pixel-identical to the original in 14/16 screenshots.
   - Fixed: the corner-coordinates textarea overflowed its panel by 22 px (it was `content-box` inside `<details>`).
