@@ -5,118 +5,130 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>REMLUX</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Doto:wght@700;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap">
+</head>
 <body>
 <div class="pblur top" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 <div class="pblur bot" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-<main>
-  <h1><span class="brand">REM</span>LUX</h1>
-  <nav class="tabs" role="tablist" aria-label="Pages">
-    <div class="tabset"><button class="tab" type="button" role="tab" data-page="room" aria-selected="false">Room</button><button class="tab" type="button" role="tab" data-page="fixture" aria-selected="false">Fixture</button><button class="tab" type="button" role="tab" data-page="visualize" aria-selected="false">Visualize</button><button class="tab" type="button" role="tab" data-page="stats" aria-selected="false">Statistics</button></div>
-    <div class="kpi" id="kpi" aria-live="polite"></div>
+<main class="mx-auto max-w-[1020px] px-4 pt-11 pb-20">
+  <h1 class="m-0 mb-5 font-display text-[length:clamp(3.2rem,16vw,6rem)] leading-none font-black tracking-[.02em] text-ink uppercase"><span class="text-accent2">REM</span>LUX</h1>
+  <nav class="sticky top-[calc(8px+env(safe-area-inset-top,0px))] z-60 mb-[18px] flex flex-wrap items-center gap-2.5" role="tablist" aria-label="Pages">
+    <div class="inline-flex w-full max-w-[640px] gap-1.5 rounded-full border border-rule bg-panel/88 p-1.5 shadow-float backdrop-blur-[10px]">
+      <button class="tab min-h-[52px] flex-1 cursor-pointer rounded-full px-2.5 py-3.5 text-[1.05rem] font-semibold tracking-[.01em] text-mute hover:text-ink aria-selected:bg-accent aria-selected:text-paper max-[480px]:min-h-12 max-[480px]:px-1 max-[480px]:py-3 max-[480px]:text-[.92rem]" type="button" role="tab" data-page="room" aria-selected="false">Room</button>
+      <button class="tab min-h-[52px] flex-1 cursor-pointer rounded-full px-2.5 py-3.5 text-[1.05rem] font-semibold tracking-[.01em] text-mute hover:text-ink aria-selected:bg-accent aria-selected:text-paper max-[480px]:min-h-12 max-[480px]:px-1 max-[480px]:py-3 max-[480px]:text-[.92rem]" type="button" role="tab" data-page="fixture" aria-selected="false">Fixture</button>
+      <button class="tab min-h-[52px] flex-1 cursor-pointer rounded-full px-2.5 py-3.5 text-[1.05rem] font-semibold tracking-[.01em] text-mute hover:text-ink aria-selected:bg-accent aria-selected:text-paper max-[480px]:min-h-12 max-[480px]:px-1 max-[480px]:py-3 max-[480px]:text-[.92rem]" type="button" role="tab" data-page="visualize" aria-selected="false">Visualize</button>
+      <button class="tab min-h-[52px] flex-1 cursor-pointer rounded-full px-2.5 py-3.5 text-[1.05rem] font-semibold tracking-[.01em] text-mute hover:text-ink aria-selected:bg-accent aria-selected:text-paper max-[480px]:min-h-12 max-[480px]:px-1 max-[480px]:py-3 max-[480px]:text-[.92rem]" type="button" role="tab" data-page="stats" aria-selected="false">Statistics</button>
+    </div>
+    <div class="rounded-full border border-rule bg-panel/88 px-3 py-1.5 text-[.85rem] text-mute backdrop-blur-[10px] [&_b]:font-bold [&_b]:text-beam" id="kpi" aria-live="polite"></div>
   </nav>
-  <div class="page" id="pg-room" role="tabpanel" aria-label="Room" hidden>
-  <div class="grid">
-    <div class="stack">
+
+  <!-- ===== Room ===== -->
+  <div id="pg-room" role="tabpanel" aria-label="Room" hidden>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
+    <div class="space-y-4">
     <section class="panel"><h2>Room</h2>
-      <label style="margin-top:0">Shape</label>
-      <div class="chips" id="shapeChips" role="group" aria-label="Room shape"></div>
+      <label class="mt-0">Shape</label>
+      <div class="mt-1.5 flex flex-wrap gap-1.5" id="shapeChips" role="group" aria-label="Room shape"></div>
       <p class="note" id="shapeNote"></p>
-      <div class="three">
-        <div><label for="L">Length</label><div class="row"><input id="L" type="number" inputmode="decimal" step="0.1" min="0.5" value="6"><span class="unit">m</span></div></div>
-        <div><label for="W">Width</label><div class="row"><input id="W" type="number" inputmode="decimal" step="0.1" min="0.5" value="4.5"><span class="unit">m</span></div></div>
-        <div><label for="H">Height</label><div class="row"><input id="H" type="number" inputmode="decimal" step="0.1" min="0.5" value="2.8"><span class="unit">m</span></div></div>
+      <div class="grid grid-cols-[repeat(3,1fr)] items-end gap-2.5">
+        <div><label for="L">Length</label><div class="flex items-center gap-1"><input class="min-w-0 px-[7px]" id="L" type="number" inputmode="decimal" step="0.1" min="0.5" value="6"><span class="min-w-0 text-mute">m</span></div></div>
+        <div><label for="W">Width</label><div class="flex items-center gap-1"><input class="min-w-0 px-[7px]" id="W" type="number" inputmode="decimal" step="0.1" min="0.5" value="4.5"><span class="min-w-0 text-mute">m</span></div></div>
+        <div><label for="H">Height</label><div class="flex items-center gap-1"><input class="min-w-0 px-[7px]" id="H" type="number" inputmode="decimal" step="0.1" min="0.5" value="2.8"><span class="min-w-0 text-mute">m</span></div></div>
       </div>
       <details id="polyBox" hidden><summary>Corner coordinates</summary>
-        <textarea id="polyTxt" style="min-height:120px" aria-label="Corner coordinates, one x, y pair per line in metres"></textarea>
-        <div class="actions"><button class="chip" id="polyApply" type="button">Apply corners</button><span class="note" id="polyMsg" style="margin:0">One corner per line: x, y in metres, going round the room.</span></div>
+        <textarea class="min-h-[120px]" id="polyTxt" aria-label="Corner coordinates, one x, y pair per line in metres"></textarea>
+        <div class="actions"><button class="chip" id="polyApply" type="button">Apply corners</button><span class="note m-0" id="polyMsg">One corner per line: x, y in metres, going round the room.</span></div>
       </details>
       <label for="wp">Work plane height</label>
-      <div class="row"><input id="wp" type="number" inputmode="decimal" step="0.1" min="0" value="0"><span class="unit">m</span></div>
+      <div class="flex items-center gap-2"><input id="wp" type="number" inputmode="decimal" step="0.1" min="0" value="0"><span class="min-w-[1.6em] text-mute">m</span></div>
       <label for="wz">Wall zone excluded</label>
-      <div class="row"><input id="wz" type="number" inputmode="decimal" step="0.1" min="0" value="0.5"><span class="unit">m</span></div>
+      <div class="flex items-center gap-2"><input id="wz" type="number" inputmode="decimal" step="0.1" min="0" value="0.5"><span class="min-w-[1.6em] text-mute">m</span></div>
       <p class="note">Strip along the walls left out of min and average (EN 12464-1 uses 0.5 m). 0 includes the whole floor. Work plane: 0 for floor, about 0.75 for desks.</p>
     </section>
     </div>
-    <div class="stack">
+    <div class="space-y-4">
     <section class="panel"><h2>Saved rooms</h2>
-      <label for="pname" style="margin-top:0">Room name</label>
-      <div class="row"><input id="pname" type="text" maxlength="40" placeholder="e.g. Living room"><button class="chip" id="saveBtn" type="button">Save</button></div>
+      <label class="mt-0" for="pname">Room name</label>
+      <div class="flex items-center gap-2"><input id="pname" type="text" maxlength="40" placeholder="e.g. Living room"><button class="chip" id="saveBtn" type="button">Save</button></div>
       <div id="saved"></div>
-      <div class="actions"><button class="chip" id="resetBtn" type="button">Reset to defaults</button><span class="note" style="margin:0">Saved in this browser only.</span></div>
+      <div class="actions"><button class="chip" id="resetBtn" type="button">Reset to defaults</button><span class="note m-0">Saved in this browser only.</span></div>
     </section>
     </div>
   </div>
   </div>
-  <div class="page" id="pg-fixture" role="tabpanel" aria-label="Fixture" hidden>
-  <div class="grid">
-    <div class="stack">
-    <section class="panel"><div class="ttl"><h2>Groups</h2><small>each with its own fixture and layout</small></div><div class="grpHost"></div></section>
+
+  <!-- ===== Fixture ===== -->
+  <div id="pg-fixture" role="tabpanel" aria-label="Fixture" hidden>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
+    <div class="space-y-4">
+    <section class="panel"><div class="flex flex-wrap items-baseline justify-between gap-2"><h2>Groups</h2><small class="text-mute">each with its own fixture and layout</small></div><div class="grpHost"></div></section>
     <section class="panel"><h2>Fixture</h2>
-      <label style="margin-top:0">Light distribution</label>
-      <div class="chips" id="photChips" role="group" aria-label="Light distribution"></div>
+      <label class="mt-0">Light distribution</label>
+      <div class="mt-1.5 flex flex-wrap gap-1.5" id="photChips" role="group" aria-label="Light distribution"></div>
       <input id="iesFile" type="file" accept=".ies,.IES,text/plain" hidden>
       <p class="note" id="iesInfo" aria-live="polite"></p>
       <label for="ang">Beam angle</label>
-      <div class="row"><input id="ang" type="number" inputmode="decimal" step="1" min="5" max="120" value="36"><span class="unit">°</span></div>
-      <div class="chips" id="angChips" role="group" aria-label="Beam angle presets"></div>
+      <div class="flex items-center gap-2"><input id="ang" type="number" inputmode="decimal" step="1" min="5" max="120" value="36"><span class="min-w-[1.6em] text-mute">°</span></div>
+      <div class="mt-1.5 flex flex-wrap gap-1.5" id="angChips" role="group" aria-label="Beam angle presets"></div>
       <label for="lm">Lumens per fixture</label>
-      <div class="row"><input id="lm" type="number" inputmode="decimal" step="50" min="10" value="800"><span class="unit">lm</span></div>
+      <div class="flex items-center gap-2"><input id="lm" type="number" inputmode="decimal" step="50" min="10" value="800"><span class="min-w-[1.6em] text-mute">lm</span></div>
       <label for="pw">Power per fixture (optional)</label>
-      <div class="row"><input id="pw" type="number" inputmode="decimal" step="0.5" min="0" value="10"><span class="unit">W</span></div>
+      <div class="flex items-center gap-2"><input id="pw" type="number" inputmode="decimal" step="0.5" min="0" value="10"><span class="min-w-[1.6em] text-mute">W</span></div>
       <label for="fr">Downlight radius</label>
-      <div class="row"><input id="fr" type="number" inputmode="decimal" step="5" min="5" max="300" value="50"><span class="unit">mm</span></div>
+      <div class="flex items-center gap-2"><input id="fr" type="number" inputmode="decimal" step="5" min="5" max="300" value="50"><span class="min-w-[1.6em] text-mute">mm</span></div>
       <p class="note" id="frNote"></p>
     </section>
     </div>
-    <div class="stack">
+    <div class="space-y-4">
       <section class="panel">
-        <div class="ttl"><h2>One downlight</h2><small id="oneCap"></small></div>
-        <div class="one"><div id="oneHeat"></div><div id="oneProf"></div></div>
+        <div class="flex flex-wrap items-baseline justify-between gap-2"><h2>One downlight</h2><small class="text-mute" id="oneCap"></small></div>
+        <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-[1fr_1fr] [&_.note]:mt-1.5"><div id="oneHeat"></div><div id="oneProf"></div></div>
       </section>
     </div>
   </div>
   </div>
-  <div class="page" id="pg-visualize" role="tabpanel" aria-label="Visualize" hidden>
-  <div class="grid">
-    <div class="stack">
-    <section class="panel"><div class="ttl"><h2>Groups</h2><small>each with its own fixture and layout</small></div><div class="grpHost"></div></section>
+
+  <!-- ===== Visualize ===== -->
+  <div id="pg-visualize" role="tabpanel" aria-label="Visualize" hidden>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
+    <div class="space-y-4">
+    <section class="panel"><div class="flex flex-wrap items-baseline justify-between gap-2"><h2>Groups</h2><small class="text-mute">each with its own fixture and layout</small></div><div class="grpHost"></div></section>
     <section class="panel"><h2>Grid</h2>
-      <label style="margin-top:0">Formation</label>
-      <div class="chips" id="formChips" role="group" aria-label="Formation"></div>
+      <label class="mt-0">Formation</label>
+      <div class="mt-1.5 flex flex-wrap gap-1.5" id="formChips" role="group" aria-label="Formation"></div>
       <p class="note" id="formNote"></p>
       <label>Placement</label>
-      <div class="chips" id="areaChips" role="group" aria-label="Placement"></div>
-      <div class="four" id="areaBox" hidden>
-        <div><label for="ax">x</label><input id="ax" type="number" inputmode="decimal" step="0.1" value="1.5"></div>
-        <div><label for="ay">y</label><input id="ay" type="number" inputmode="decimal" step="0.1" value="1.1"></div>
-        <div><label for="aw">width</label><input id="aw" type="number" inputmode="decimal" step="0.1" min="0.1" value="3"></div>
-        <div><label for="ah">depth</label><input id="ah" type="number" inputmode="decimal" step="0.1" min="0.1" value="2.25"></div>
+      <div class="mt-1.5 flex flex-wrap gap-1.5" id="areaChips" role="group" aria-label="Placement"></div>
+      <div class="grid grid-cols-4 items-end gap-2" id="areaBox" hidden>
+        <div><label class="mt-2.5" for="ax">x</label><input class="px-[7px]" id="ax" type="number" inputmode="decimal" step="0.1" value="1.5"></div>
+        <div><label class="mt-2.5" for="ay">y</label><input class="px-[7px]" id="ay" type="number" inputmode="decimal" step="0.1" value="1.1"></div>
+        <div><label class="mt-2.5" for="aw">width</label><input class="px-[7px]" id="aw" type="number" inputmode="decimal" step="0.1" min="0.1" value="3"></div>
+        <div><label class="mt-2.5" for="ah">depth</label><input class="px-[7px]" id="ah" type="number" inputmode="decimal" step="0.1" min="0.1" value="2.25"></div>
       </div>
       <p class="note" id="areaNote" hidden>Lights are laid out inside this rectangle, measured in metres from the top-left corner of the plan. Good for a group over a table, island or corridor.</p>
-      <div class="two">
+      <div class="grid grid-cols-[1fr_1fr] items-end gap-2.5">
         <div><label for="nx" id="nxLab">Columns · length</label><input id="nx" type="number" inputmode="numeric" step="1" min="1" max="20" value="4"></div>
         <div><label for="ny" id="nyLab">Rows · width</label><input id="ny" type="number" inputmode="numeric" step="1" min="1" max="20" value="3"></div>
       </div>
-      <div class="chips" id="gridChips" role="group" aria-label="Grid presets"></div>
+      <div class="mt-1.5 flex flex-wrap gap-1.5" id="gridChips" role="group" aria-label="Grid presets"></div>
       <label>Distance between downlights</label>
-      <div class="chips" id="modeChips" role="group" aria-label="Spacing mode"></div>
-      <div class="two">
-        <div><label for="dx">Along length</label><div class="row"><input id="dx" type="number" inputmode="decimal" step="0.05" min="0.1" value="1.5"><span class="unit">m</span></div></div>
-        <div><label for="dy">Along width</label><div class="row"><input id="dy" type="number" inputmode="decimal" step="0.05" min="0.1" value="1.5"><span class="unit">m</span></div></div>
+      <div class="mt-1.5 flex flex-wrap gap-1.5" id="modeChips" role="group" aria-label="Spacing mode"></div>
+      <div class="grid grid-cols-[1fr_1fr] items-end gap-2.5">
+        <div><label for="dx">Along length</label><div class="flex items-center gap-2"><input id="dx" type="number" inputmode="decimal" step="0.05" min="0.1" value="1.5"><span class="min-w-[1.6em] text-mute">m</span></div></div>
+        <div><label for="dy">Along width</label><div class="flex items-center gap-2"><input id="dy" type="number" inputmode="decimal" step="0.05" min="0.1" value="1.5"><span class="min-w-[1.6em] text-mute">m</span></div></div>
       </div>
       <p class="note">Centre to centre. A set distance centres the grid in the room.</p>
     </section>
     </div>
-    <div class="stack">
+    <div class="space-y-4">
       <section class="panel">
         <h2>Suggest a grid for a target</h2>
-        <div class="row"><input id="tg" type="number" inputmode="decimal" step="10" min="10" value="300" aria-label="Target average lux"><span class="unit" style="min-width:4.5em">lx avg</span><button class="chip" id="sugBtn" type="button">Suggest</button></div>
-        <div class="sug" id="sug" aria-live="polite"></div>
+        <div class="flex items-center gap-2"><input id="tg" type="number" inputmode="decimal" step="10" min="10" value="300" aria-label="Target average lux"><span class="min-w-[4.5em] text-mute">lx avg</span><button class="chip" id="sugBtn" type="button">Suggest</button></div>
+        <div class="[&_p]:mt-3" id="sug" aria-live="polite"></div>
         <p class="note">Uses the formation selected on the left. Finds the fewest fixtures that reach your target with a uniformity of at least 0.5. Rough targets: corridors 100 lx, living rooms 150–200 lx, offices 300–500 lx.</p>
       </section>
       <section class="panel">
-        <div class="ttl"><h2>Floor plan</h2><small id="planCap"></small></div>
-        <div class="tog" role="group" aria-label="Layers">
+        <div class="flex flex-wrap items-baseline justify-between gap-2"><h2>Floor plan</h2><small class="text-mute" id="planCap"></small></div>
+        <div class="mb-2.5 flex flex-wrap gap-1.5" role="group" aria-label="Layers">
           <button class="chip" type="button" data-l="map">Lux map</button>
           <button class="chip" type="button" data-l="beam">Beam edge (50%)</button>
           <button class="chip" type="button" data-l="field">Field edge (10%)</button>
@@ -125,44 +137,46 @@
           <button class="chip" type="button" data-l="snap">Snap 0.1 m</button>
         </div>
         <div class="planwrap" id="planwrap"><div class="stage" id="stage"><canvas id="cv"></canvas><svg id="ov" preserveAspectRatio="none"></svg></div><svg id="dim" aria-hidden="true"></svg></div>
-        <div class="legend"><span id="lgMin">0 lx</span><div class="bar"><i class="mk" id="mkMin"></i><i class="mk avg" id="mkAvg"></i><i class="mk" id="mkMax"></i></div><span id="lgMax"></span></div>
-        <div class="tog" id="scaleChips" role="group" aria-label="Colour scale" style="margin-top:10px"></div>
-        <p class="note" id="lgNote" style="margin-top:0"></p>
+        <div class="legend mt-2.5 flex items-center gap-2 text-[.82rem] text-mute"><span id="lgMin">0 lx</span><div class="relative h-2.5 flex-1 rounded-full bg-[linear-gradient(90deg,#16161e,#3d59a1,#e0af68,#fff4dc)]"><i class="absolute -top-1 -ml-px h-[18px] w-0.5 bg-ink opacity-55" id="mkMin"></i><i class="absolute -top-1 -ml-[1.5px] h-[18px] w-[3px] bg-ink" id="mkAvg"></i><i class="absolute -top-1 -ml-px h-[18px] w-0.5 bg-ink opacity-55" id="mkMax"></i></div><span id="lgMax"></span></div>
+        <div class="mt-2.5 mb-2.5 flex flex-wrap gap-1.5" id="scaleChips" role="group" aria-label="Colour scale"></div>
+        <p class="note mt-0" id="lgNote"></p>
         <p class="note" id="dimNote"></p>
         <div class="actions" id="selbar"></div>
         <p class="note">Tap or drag a light on the plan to move it. Moving a light switches the layout to Custom.</p>
-        <p class="warn" id="verdict"></p>
+        <p class="mt-3 text-[.9rem]" id="verdict"></p>
       </section>
       <section class="panel">
-        <div class="ttl"><h2>Section along the length</h2><small id="secCap"></small></div>
+        <div class="flex flex-wrap items-baseline justify-between gap-2"><h2>Section along the length</h2><small class="text-mute" id="secCap"></small></div>
         <div id="sec"></div>
       </section>
       <section class="panel">
-        <div class="ttl"><h2>Wall scallops</h2><small id="wallCap"></small></div>
-        <div class="three">
-          <div><label for="wd">Light to wall</label><div class="row"><input id="wd" type="number" inputmode="decimal" step="0.05" min="0.05" value="0.3"><span class="unit">m</span></div></div>
-          <div><label for="ws">Spacing along wall</label><div class="row"><input id="ws" type="number" inputmode="decimal" step="0.05" min="0.1" value="1.2"><span class="unit">m</span></div></div>
-          <div><label for="wn">Lights</label><input id="wn" type="number" inputmode="numeric" step="1" min="1" max="10" value="5"></div>
+        <div class="flex flex-wrap items-baseline justify-between gap-2"><h2>Wall scallops</h2><small class="text-mute" id="wallCap"></small></div>
+        <div class="grid grid-cols-[repeat(3,1fr)] items-end gap-2.5">
+          <div><label for="wd">Light to wall</label><div class="flex items-center gap-1"><input class="min-w-0 px-[7px]" id="wd" type="number" inputmode="decimal" step="0.05" min="0.05" value="0.3"><span class="min-w-0 text-mute">m</span></div></div>
+          <div><label for="ws">Spacing along wall</label><div class="flex items-center gap-1"><input class="min-w-0 px-[7px]" id="ws" type="number" inputmode="decimal" step="0.05" min="0.1" value="1.2"><span class="min-w-0 text-mute">m</span></div></div>
+          <div><label for="wn">Lights</label><input class="min-w-0 px-[7px]" id="wn" type="number" inputmode="numeric" step="1" min="1" max="10" value="5"></div>
         </div>
-        <div class="actions" style="margin-top:12px"><button class="chip" id="wallUse" type="button">Use room layout</button></div>
+        <div class="actions mt-3"><button class="chip" id="wallUse" type="button">Use room layout</button></div>
         <p class="note">Elevation of the wall, ceiling at the top. Light fills the area under each arch. Solid line: 50% edge. Dashed line: 10% edge.</p>
-        <div class="stage" id="wstage" style="margin-top:10px"><canvas id="wcv"></canvas><svg id="wov" preserveAspectRatio="none"></svg></div>
-        <div class="legend"><span>dim</span><div class="bar"></div><span id="wMax"></span></div>
-        <div id="wOut" style="margin-top:12px"></div>
+        <div class="stage mt-2.5" id="wstage"><canvas id="wcv"></canvas><svg id="wov" preserveAspectRatio="none"></svg></div>
+        <div class="legend mt-2.5 flex items-center gap-2 text-[.82rem] text-mute"><span>dim</span><div class="relative h-2.5 flex-1 rounded-full bg-[linear-gradient(90deg,#16161e,#3d59a1,#e0af68,#fff4dc)]"></div><span id="wMax"></span></div>
+        <div class="mt-3" id="wOut"></div>
       </section>
     </div>
   </div>
   </div>
-  <div class="page" id="pg-stats" role="tabpanel" aria-label="Statistics" hidden>
-  <div class="stack">
+
+  <!-- ===== Statistics ===== -->
+  <div id="pg-stats" role="tabpanel" aria-label="Statistics" hidden>
+  <div class="space-y-4">
       <section aria-live="polite" id="out"></section>
-      <section class="panel"><div class="ttl"><h2>Surfaces</h2><small id="surfCap"></small></div><div class="tbl" id="surfTbl"></div>
+      <section class="panel"><div class="flex flex-wrap items-baseline justify-between gap-2"><h2>Surfaces</h2><small class="text-mute" id="surfCap"></small></div><div class="mt-2 overflow-x-auto" id="surfTbl"></div>
         <p class="note">Ē average, Emin lowest, Emax highest, U₀ = Emin ÷ Ē (EN 12464-1 uniformity), Ud = Emin ÷ Emax. Work plane values leave out the wall zone.</p></section>
-      <section class="panel"><div class="ttl"><h2>Lux distribution</h2><small id="histCap"></small></div><div id="hist"></div></section>
-      <section class="panel"><h2>Each downlight</h2><div class="tbl" id="tbl"></div></section>
+      <section class="panel"><div class="flex flex-wrap items-baseline justify-between gap-2"><h2>Lux distribution</h2><small class="text-mute" id="histCap"></small></div><div id="hist"></div></section>
+      <section class="panel"><h2>Each downlight</h2><div class="mt-2 overflow-x-auto" id="tbl"></div></section>
       <section class="panel"><h2>Spec summary</h2>
         <textarea id="sumTxt" readonly aria-label="Spec summary"></textarea>
-        <div class="actions"><button class="chip" id="copyBtn" type="button">Copy summary</button><span class="note" id="copyMsg" style="margin:0"></span></div></section>
+        <div class="actions"><button class="chip" id="copyBtn" type="button">Copy summary</button><span class="note m-0" id="copyMsg"></span></div></section>
       <section class="panel"><h2>Method</h2>
         <p class="note">Model: either a loaded IES file (C-planes averaged into one rotationally symmetric curve) or a generic cos<sup>n</sup> distribution fitted so intensity falls to 50% at half the beam angle. Direct light only: no reflections from walls, ceiling or floor, so real rooms will measure somewhat brighter. Use for early layout, then confirm with the real IES or LDT file in DIALux.</p>
       </section>

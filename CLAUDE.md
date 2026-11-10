@@ -4,7 +4,16 @@
 
 REMLUX is a web app for calculating and visualizing how light spreads in a room, with luminaires organized in groups, in the spirit of DIALux. It is meant for early lighting layout; final results get confirmed in DIALux with the real IES/LDT files.
 
-Stack: Vite + TypeScript (strict) + Vitest (jsdom). No runtime JS dependencies; only Google Fonts (Doto, JetBrains Mono). Node.js is at `C:\Program Files\nodejs` (may need adding to PATH in Git Bash: `export PATH="/c/Program Files/nodejs:$PATH"`).
+Stack: Vite + TypeScript (strict) + Tailwind CSS v4 (`@tailwindcss/vite`) + Vitest (jsdom). No runtime JS dependencies; only Google Fonts (Doto, JetBrains Mono).
+
+### Styling (Tailwind v4)
+- `src/styles.css` holds everything: `@theme` tokens, `@layer base` element defaults, `@layer components` for pieces the script builds as HTML strings or toggles by class. No `tailwind.config.js` (v4 is CSS-first).
+- Only the project palette exists (default Tailwind colours are switched off): `paper` (page), `panel`, `raise`, `ink` (text), `mute`, `rule` (borders), `beam` (light/amber), `accent` (blue), `accent2` (purple), `ok`, `bad`. Use `bg-panel`, `text-mute`, `border-rule`… never raw hex in markup.
+- Fonts: `font-mono` (JetBrains Mono, the body font), `font-display` (Doto, the logo). Breakpoints: `sm` = 560px, `md` = 840px (sidebar layout); `max-[480px]:` for small phones.
+- The script writes `var(--ink)`, `var(--panel)`, `var(--accent)`… into inline SVG; those short aliases are defined in `:root` from the theme. Keep them when renaming tokens.
+- Static layout in `index.html` uses utilities. Keep component classes for script-generated markup: `panel`, `note`, `err`, `chip` (`aria-pressed=true` = selected), `actions`, `results`/`res`/`res hero`, `glist`/`grow`/`gsel`/`gtog`, `saved`, `stage`, `planwrap`, `upd`/`primary`, `pblur`, `num`.
+- Hook classes the script queries; don't remove: `.tab`, `.legend`, `.upd`, `.grpHost`, `.grow`, `.gsel`, `.gname`, `[data-l]`.
+- The Tailwind migration was checked pixel-for-pixel against the original HTML in Edge (4 pages × 2 widths × 2 states: identical except the fixed textarea overflow below). Node.js is at `C:\Program Files\nodejs` (may need adding to PATH in Git Bash: `export PATH="/c/Program Files/nodejs:$PATH"`).
 
 ### Commands
 - `npm run dev`: dev server with live reload (http://localhost:5173).
