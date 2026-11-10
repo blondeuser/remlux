@@ -17,14 +17,22 @@ Stack: Vite + TypeScript (strict) + Vitest (jsdom). No runtime JS dependencies; 
 - `index.html`: markup only (the four pages).
 - `src/styles.css`: all CSS.
 - `src/main.ts`: entry; imports the CSS and the app.
-- `src/legacy/app.js`: the original app script, moved over unchanged (plain JS, not type-checked, runs as an ES module in strict mode). Being split into `src/engine/` (pure maths, no DOM, unit-tested), `src/render/`, `src/ui/`, `src/state/`. New code goes in TypeScript in those folders, not in `legacy/`.
+- `src/engine/`: the calculation engine. Pure TypeScript (strict), no DOM, fully unit-tested. Import from `src/engine/index.ts`.
+  - `types.ts`: `Pt`, `Poly`, `IntensityFn` (cd vs cos γ), `Formation`.
+  - `geometry.ts`: `rectPoly`, `inPoly`, `polyArea`, `polyPerim`, `isConvex`, `edgeDist`, `crosses` (wall blocks a line of sight), `inwardN`, `insetPoly`, `isSimple`, `shapePreset` (L/T/U), `normalizePoly`.
+  - `photometry.ts`: `parseIES` (LM-63, Type C, C-planes averaged), `iesIntensity`, `buildModel` (IES or cosⁿ fitted to beam angle → `Iof` lookup table, beam/field half-angles), `rad`/`deg`.
+  - `layout.ts`: `layout` (grid/stagger/hex/perim in a box), `placeLights` (clipped to the room shape), `placeIn` (whole room or a group's area), `areaOf`.
+  - `illuminance.ts`: `illuminanceAt` (one fixture, E = I·cos³γ/h²), `directIlluminance` (all lights, walls block in non-convex rooms), `sampleWorkPlane` (grid + Ē/Emin/Emax/U₀ excluding the wall zone), `wallZoneWidth`, `wallScallops`.
+  - `suggest.ts`: `suggestGrid` (fewest fixtures reaching the target with U₀ ≥ 0.5).
+  - Convention: `shape: Poly | null` where `null` means a plain L × W rectangle (no clipping). Keep the arithmetic exactly as is unless a change is intended; results are locked by tests.
+- `src/legacy/app.js`: UI, state, drawing and event wiring (plain JS, not type-checked, ES module in strict mode). Imports the engine; `model()`, `placeLights()`, `placeIn()`, `wzone()`, `normPoly()`, `suggest()` are thin wrappers that read on-screen inputs and the global `poly`. Still to split into `src/render/`, `src/ui/`, `src/state/`. New code goes in TypeScript in those folders, not in `legacy/`.
+- `tests/engine/*.test.ts`: unit tests of the physics (flux conservation, 50%/10% beam edges, inverse-square/cos³, wall blocking, layouts, Suggest). `tests/fixtures/*.ies`: small IES files.
 - `tests/app.smoke.test.ts`: boots the whole app with defaults and checks the headline numbers (330 lx avg, U 0.74, 405 lx wall peak, Suggest 4 × 3). If a refactor changes these, the maths changed; investigate before updating them.
 - `REMLUX_MD.md`: the app's UI text and method notes as plain Markdown (a copy of the page's copy, not code).
 - The original `REMLUX_HTML.html` is in git history (first commit).
 
 ### Refactor plan (in order, app working after each step)
-1. ~~git~~ ✓  2. ~~Vite + TS scaffold~~ ✓
-3. Move maths into `src/engine/` with Vitest tests (photometry/IES, illuminance, geometry, layout, suggest).
+1. ~~git~~ ✓  2. ~~Vite + TS scaffold~~ ✓  3. ~~Maths into `src/engine/` with tests~~ ✓ (verified identical output to the original app across 9 scenarios: L/U/T rooms, hex/stagger/perimeter, fixed spacing, IES, custom points, multiple groups with areas)
 4. Split rendering and UI into modules; version the localStorage state so old saved rooms keep loading.
 5. Static hosting (Cloudflare Pages / Netlify / GitHub Pages), optional PWA for offline use.
 6. New features: LDT files, full C-plane IES, PDF export.
@@ -36,12 +44,12 @@ Four pages (`PAGES = ['room','fixture','visualize','stats']`, switched by `showP
 - **Visualize**: floor plan heatmap (`#cv` canvas + `#ov` SVG overlay; lights draggable → switches layout to Custom), section along the length, wall scallops (`#wcv` / `#wov`).
 - **Stats**: work plane table (Ē, Emin, Emax, U₀ = Emin/Ē, Ud = Emin/Emax), lux distribution, each downlight, spec summary, method.
 
-### Key functions (in `src/legacy/app.js`)
+### Key functions in `src/legacy/app.js` (engine functions are listed under Layout above)
 - `calc()`: main calculation + render pass.
-- `parseIES` / `iesI`: IES file parsing (C-planes averaged into one rotationally symmetric curve) and intensity interpolation. `model(q)`: builds the intensity model.
+- `model(q)`: wraps `buildModel` for the selected group (on-screen inputs) or a stored group `q`.
 - Groups: `groups`, `act`, `renderGroups`, `snapGroup`, `saveActive`, `loadGroup`, `groupLights`.
-- Layout: `layout`, `placeIn`, `placeLights`, `suggest` (fewest fixtures reaching target with U₀ ≥ 0.5).
-- Polygon geometry: `inPoly`, `polyArea`, `isConvex`, `isSimple`, `insetPoly`, `edgeDist`, `shapePreset`, `normPoly`.
+- `suggest()`: validates inputs, calls `suggestGrid`, renders the result.
+- `normPoly()`: wraps `normalizePoly`, shifts custom points, updates Length/Width inputs.
 - Drawing: `drawDims`, `drawSection`, `drawOne`, `drawWall`, `ramp` (false-colour scale).
 - Persistence: `localStorage` keys `dlc:last` (last state) and `dlc:rooms` (saved rooms).
 

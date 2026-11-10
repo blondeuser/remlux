@@ -1,6 +1,10 @@
-// Legacy app script, moved unchanged from REMLUX_HTML.html. Runs as an ES module (strict mode).
+// Legacy app script, moved from REMLUX_HTML.html. Runs as an ES module (strict mode).
+// The maths lives in src/engine (pure, tested); this file keeps the UI, state and drawing,
+// with thin wrappers that read the on-screen inputs and the global room shape.
+import{rad,deg,parseIES,buildModel,layout,placeLights as placeLightsE,placeIn as placeInE,areaOf,
+  rectPoly,inPoly,polyArea,polyPerim,isConvex,edgeDist,crosses,inwardN,insetPoly,isSimple,shapePreset,normalizePoly,
+  directIlluminance,illuminanceAt,wallZoneWidth,sampleWorkPlane,wallScallops,suggestGrid}from'../engine/index.ts';
 const $=id=>document.getElementById(id);
-const rad=d=>d*Math.PI/180;
 const f=(n,d=2)=>{const t=(+n).toFixed(d);return t.includes('.')?t.replace(/\.?0+$/,''):t};
 const GRIDS=[[2,2],[3,2],[3,3],[4,3],[4,4],[5,4],[6,4],[6,6]];
 const ANG=[10,15,24,36,45,60,90];
@@ -53,73 +57,15 @@ function drawDims(){
 }
 const SCALES=['auto',100,200,500,1000,2000];let lxScale=500,mapView='total';
 let genVals=null,form='grid';
-const HX=Math.sqrt(3)/2;
 const FORMS={grid:['Grid','Rows and columns, with half a spacing to the walls. The standard for even ambient light in regular rooms.'],
   stagger:['Staggered','Like brickwork: every other row sits midway between the lights above, with one fewer light. Fills the dark spots between rows; useful in long rooms or when joists dictate positions.'],
   hex:['Honeycomb','Hexagonal: every light is the same distance from its six neighbours. The most even coverage for round beams, usually with fewer lights than a square grid.'],
   perim:['Perimeter','Only the outer ring of the grid, set in from the walls. Washes and frames the walls; pair it with a cove or a few centre lights for the middle of the room.']};
-// positions for a formation; fixed=true uses dx/dy as centre-to-centre spacing
-function layout(fm,nx,ny,L,W,fixed,dx,dy){
-  const st=fm==='stagger'||fm==='hex';let sx,sy;
-  if(fm==='hex'){sx=fixed?dx:Math.min(L/nx,ny>1?W/(ny*HX):Infinity);sy=sx*HX}
-  else if(fixed){sx=dx;sy=dy}else{sx=L/nx;sy=W/ny}
-  const offx=(L-(nx-1)*sx)/2,offy=(W-(ny-1)*sy)/2,pts=[],labs=[];
-  for(let i=0;i<nx;i++)for(let j=0;j<ny;j++){
-    if(fm==='perim'&&!(i===0||i===nx-1||j===0||j===ny-1))continue;
-    let x=offx+i*sx;
-    // offset rows sit midway between the lights above, one fewer per row, so both ends stay symmetric
-    if(st&&j%2&&nx>1){if(i===nx-1)continue;x+=sx/2}
-    pts.push([x,offy+j*sy]);labs.push(String.fromCharCode(65+i%26)+(j+1));
-  }
-  return{pts,labs,sx,sy,offx,offy};
-}
 let mode='even',customPts=null,sel=-1,prevL=0,prevW=0,lastPts=[],wallP=null,phot='gen',ies=null;
-const deg=r=>r*180/Math.PI;
-// ---- IES LM-63 parser: returns a rotationally averaged intensity curve (cd per file) ----
-function parseIES(txt,file){
-  const lines=txt.split(/\r?\n/);let i=0,name='';
-  for(;i<lines.length;i++){const l=lines[i].trim(),m=l.match(/^\[(LUMINAIRE|LUMCAT)\]\s*(.*)/i);if(m&&!name&&m[2])name=m[2].trim();if(/^TILT\s*=/i.test(l))break}
-  if(i>=lines.length)throw Error('No TILT= line found, so this does not look like an IES file.');
-  const tilt=lines[i].split('=')[1].trim().toUpperCase();
-  const N=lines.slice(i+1).join(' ').split(/[\s,]+/).filter(Boolean).map(Number);
-  let p=0;if(tilt==='INCLUDE'){p=2+2*N[1]}
-  const need=k=>{if(N.length<p+k||N.slice(p,p+k).some(isNaN))throw Error('The IES file looks incomplete or damaged.')};
-  need(13);
-  const[,lmLamp,mult,nv,nh,ptype,,,,,bf,,watts]=N.slice(p,p+13);p+=13;
-  if(ptype!==1)throw Error('Only Type C photometry is supported (normal for downlights). This file is Type '+(ptype===2?'B':'A')+'.');
-  need(nv+nh+nv*nh);
-  const v=N.slice(p,p+nv);p+=nv;const hz=N.slice(p,p+nh);p+=nh;
-  const k=mult*(bf>0?bf:1),c=new Array(nv).fill(0);
-  // trapezoid weights across the horizontal planes given
-  const wt=hz.map((h,j)=>nh===1?1:((j<nh-1?hz[j+1]-h:0)+(j>0?h-hz[j-1]:0))/2);
-  const ws=wt.reduce((s,x)=>s+x,0)||1;
-  for(let j=0;j<nh;j++)for(let q=0;q<nv;q++)c[q]+=N[p+j*nv+q]*k*wt[j]/ws;
-  const P={name:name||file.replace(/\.ies$/i,''),file,v,c,watts:watts>0?watts:0};
-  let Fd=0,Fu=0;for(let s=0;s<1800;s++){const g=(s+.5)*.1,dF=2*Math.PI*iesI(P,g)*Math.sin(rad(g))*rad(.1);if(g<90)Fd+=dF;else Fu+=dF}
-  if(Fd<=0)throw Error('This file has no downward light.');
-  P.flux=Fd+Fu;P.up=Fu/(Fd+Fu);return P;
-}
-function iesI(P,gd){const v=P.v,c=P.c,n=v.length;if(n===1)return gd===v[0]?c[0]:0;if(gd<v[0]||gd>v[n-1])return 0;let i=1;while(i<n-1&&v[i]<gd)i++;const a=v[i-1],b=v[i],t=b>a?(gd-a)/(b-a):0;return c[i-1]+(c[i]-c[i-1])*t}
 // ---- one fixture model: lookup table of intensity vs cos(gamma), plus beam / field half-angles ----
 // q (optional): {phot, ies, ang, lm} for a stored group; otherwise the inputs on screen
 function model(q){
-  const PH=q?q.phot:phot,IE=q?q.ies:ies,iz=PH==='ies'&&IE,lm=iz?IE.flux:q?+q.lm:+$('lm').value,llf=1,a=q?+q.ang:+$('ang').value,F1=lm*llf;
-  if(!(lm>0))return null;
-  let Ig,th,gF,up=0;const ies_=IE;
-  if(iz){const ies=ies_;
-    const k=F1/ies.flux;Ig=g=>k*iesI(ies,deg(g));up=ies.up;
-    let Im=0,gm=0;for(let d=0;d<=90;d+=.05){const x=Ig(rad(d));if(x>Im){Im=x;gm=d}}
-    const edge=fr=>{for(let d=gm;d<=90;d+=.05)if(Ig(rad(d))<fr*Im)return rad(Math.max(.05,d));return rad(89.9)};
-    th=edge(.5);gF=edge(.1);
-  }else{
-    if(!(a>=5&&a<=120))return null;
-    th=rad(a/2);const n=Math.log(.5)/Math.log(Math.cos(th)),I0=F1*(n+1)/(2*Math.PI);
-    Ig=g=>g>=Math.PI/2?0:I0*Math.pow(Math.cos(g),n);gF=Math.acos(Math.pow(.1,1/n));
-  }
-  // table indexed by t=sqrt(1-cos g): dense near the axis, so narrow beams stay accurate
-  const M=2048,T=new Float32Array(M+1);for(let q=0;q<=M;q++){const t=q/M;T[q]=Ig(Math.acos(1-t*t))}
-  const Iof=c=>{const t=Math.sqrt(Math.max(0,1-c))*M,q=t|0;return q>=M?T[M]:T[q]+(T[q+1]-T[q])*(t-q)};
-  return{Iof,th,gF,F1,up,ang:2*deg(th),llf,lm};
+  return buildModel(q?{phot:q.phot,ies:q.ies,angle:+q.ang,lumens:+q.lm}:{phot,ies,angle:+$('ang').value,lumens:+$('lm').value});
 }
 // ---- lighting groups: each has its own fixture and layout; every group that is on adds to the result ----
 const GCOL=['#7aa2f7','#9ece6a','#ff9e64','#bb9af7','#7dcfff','#f7768e','#e0af68'];
@@ -140,13 +86,7 @@ function loadGroup(i){act=Math.max(0,Math.min(groups.length-1,i));const g=groups
   GV.forEach(k=>{if(g.vals&&g.vals[k]!==undefined)$(k).value=g.vals[k]});
   mode=g.mode||'even';customPts=cloneP(g.customPts);form=g.form||'grid';phot=g.phot||'gen';ies=g.ies||null;genVals=g.genVals?{...g.genVals}:null;areaOn=!!g.areaOn;sel=-1}
 // lights of a formation, either over the whole room (clipped to its shape) or inside the group's own area
-function placeIn(fm,nx,ny,L,W,fixed,dx,dy,P,ar){
-  if(!ar)return placeLights(fm,nx,ny,L,W,fixed,dx,dy,P);
-  const ly=layout(fm,nx,ny,ar.w,ar.h,fixed,dx,dy),pts=[],labs=[];
-  ly.pts.forEach((q,i)=>{const x=q[0]+ar.x,y=q[1]+ar.y;if(x<0||y<0||x>L||y>W)return;if(poly&&!(inPoly(x,y,P)&&edgeDist(x,y,P)>=.1))return;pts.push([x,y]);labs.push(ly.labs[i])});
-  return{...ly,pts,labs,offx:ly.offx+ar.x,offy:ly.offy+ar.y};
-}
-const areaOf=(on,v)=>on&&+v.aw>0&&+v.ah>0?{x:+v.ax||0,y:+v.ay||0,w:+v.aw,h:+v.ah}:null;
+const placeIn=(fm,nx,ny,L,W,fixed,dx,dy,P,ar)=>placeInE(fm,nx,ny,L,W,fixed,dx,dy,poly?P:null,ar);
 // a stored (not selected) group: its model and light positions
 function groupLights(g,L,W,P,h){
   const v=g.vals||{},md=model({phot:g.phot,ies:g.ies,ang:v.ang,lm:v.lm});if(!md)return null;
@@ -158,40 +98,15 @@ function groupLights(g,L,W,P,h){
 }
 // ---- room polygon geometry (metres, x along length, y along width) ----
 let poly=null,shapeEdit=false,selV=-1,polySig='';
-const rectPoly=(L,W)=>[[0,0],[L,0],[L,W],[0,W]];
 const roomP=(L,W)=>poly||rectPoly(L,W);
-function inPoly(x,y,P){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const[xi,yi]=P[i],[xj,yj]=P[j];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)c=!c}return c}
-function polyArea(P){let a=0;for(let i=0,j=P.length-1;i<P.length;j=i++)a+=(P[j][0]+P[i][0])*(P[j][1]-P[i][1]);return a/2}
-const polyPerim=P=>P.reduce((s,a,i)=>{const b=P[(i+1)%P.length];return s+Math.hypot(b[0]-a[0],b[1]-a[1])},0);
-function isConvex(P){let sg=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],c=P[(i+2)%P.length],cr=(b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]);if(Math.abs(cr)<1e-9)continue;if(sg&&Math.sign(cr)!==sg)return false;sg=Math.sign(cr)}return true}
-function segDist(x,y,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy,t=l2?Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/l2)):0;return Math.hypot(x-ax-t*dx,y-ay-t*dy)}
-function edgeDist(x,y,P){let m=Infinity;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],d=segDist(x,y,a[0],a[1],b[0],b[1]);if(d<m)m=d}return m}
-// does the segment a→b pass through a wall? (touching at an end does not count)
-function crosses(ax,ay,bx,by,P){const n=P.length;for(let i=0;i<n;i++){const c=P[i],d=P[(i+1)%n];
-  const o1=(bx-ax)*(c[1]-ay)-(by-ay)*(c[0]-ax),o2=(bx-ax)*(d[1]-ay)-(by-ay)*(d[0]-ax);if(o1*o2>=-1e-12)continue;
-  const o3=(d[0]-c[0])*(ay-c[1])-(d[1]-c[1])*(ax-c[0]),o4=(d[0]-c[0])*(by-c[1])-(d[1]-c[1])*(bx-c[0]);if(o3*o4<-1e-12)return true}return false}
-function inwardN(P,i){const a=P[i],b=P[(i+1)%P.length],dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1;let nx=-dy/l,ny=dx/l;const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,e=Math.min(1e-3,l/10);if(!inPoly(mx+nx*e,my+ny*e,P)){nx=-nx;ny=-ny}return[nx,ny]}
-function insetPoly(P,d){const n=P.length,Ls=P.map((a,i)=>{const b=P[(i+1)%n],[nx,ny]=inwardN(P,i);return[a[0]+nx*d,a[1]+ny*d,b[0]-a[0],b[1]-a[1]]});
-  return Ls.map((l1,i)=>{const l0=Ls[(i-1+n)%n],den=l0[2]*l1[3]-l0[3]*l1[2];if(Math.abs(den)<1e-12)return[l1[0],l1[1]];const t=((l1[0]-l0[0])*l1[3]-(l1[1]-l0[1])*l1[2])/den;return[l0[0]+l0[2]*t,l0[1]+l0[3]*t]})}
-function isSimple(P){const n=P.length;for(let i=0;i<n;i++)for(let j=i+2;j<n;j++){if(i===0&&j===n-1)continue;const a=P[i],b=P[(i+1)%n];if(crosses(a[0],a[1],b[0],b[1],[P[j],P[(j+1)%n]]))return false}return true}
 const SHAPES={rect:'Rectangle',L:'L-shape',T:'T-shape',U:'U-shape'};
-function shapePreset(k,L,W){const r=v=>Math.round(v*100)/100;
-  const S={L:[[0,0],[L,0],[L,W*.5],[L*.5,W*.5],[L*.5,W],[0,W]],T:[[0,0],[L,0],[L,W*.45],[L*.67,W*.45],[L*.67,W],[L*.33,W],[L*.33,W*.45],[0,W*.45]],U:[[0,0],[L*.35,0],[L*.35,W*.6],[L*.65,W*.6],[L*.65,0],[L,0],[L,W],[0,W]]}[k];
-  return S?S.map(([x,y])=>[r(x),r(y)]):null}
 // shift the polygon so its bounding box starts at 0,0 and make Length / Width match it
-function normPoly(){if(!poly)return;const xs=poly.map(p=>p[0]),ys=poly.map(p=>p[1]),x0=Math.min(...xs),y0=Math.min(...ys),x1=Math.max(...xs),y1=Math.max(...ys);
-  const pk=poly._k;poly=poly.map(([x,y])=>[Math.round((x-x0)*1000)/1000,Math.round((y-y0)*1000)/1000]);poly._k=pk;
-  if(customPts)customPts=customPts.map(([x,y])=>[x-x0,y-y0]);
-  $('L').value=f(x1-x0,3);$('W').value=f(y1-y0,3);prevL=+$('L').value;prevW=+$('W').value}
+function normPoly(){if(!poly)return;const pk=poly._k,n=normalizePoly(poly);poly=n.P;poly._k=pk;
+  if(customPts)customPts=customPts.map(([x,y])=>[x-n.x0,y-n.y0]);
+  $('L').value=f(n.L,3);$('W').value=f(n.W,3);prevL=+$('L').value;prevW=+$('W').value}
 // layout of a formation, clipped to the room shape (perimeter follows the walls)
-function placeLights(fm,nx,ny,L,W,fixed,dx,dy,P){
-  const ly=layout(fm,nx,ny,L,W,fixed,dx,dy);if(!poly)return ly;
-  if(fm==='perim'){const s=ly.sx,Q=insetPoly(P,Math.min(ly.sx,ly.sy)/2),pts=[],labs=[];
-    Q.forEach((a,i)=>{const b=Q[(i+1)%Q.length],len=Math.hypot(b[0]-a[0],b[1]-a[1]),k=Math.max(1,Math.round(len/s));for(let j=0;j<k;j++){pts.push([a[0]+(b[0]-a[0])*j/k,a[1]+(b[1]-a[1])*j/k]);labs.push('P'+pts.length)}});
-    return{...ly,pts,labs}}
-  const pts=[],labs=[];ly.pts.forEach((q,i)=>{if(inPoly(q[0],q[1],P)&&edgeDist(q[0],q[1],P)>=.1){pts.push(q);labs.push(ly.labs[i])}});return{...ly,pts,labs};
-}
-const wzone=(L,W)=>Math.max(0,Math.min(+$('wz').value||0,L/4,W/4));
+const placeLights=(fm,nx,ny,L,W,fixed,dx,dy,P)=>placeLightsE(fm,nx,ny,L,W,fixed,dx,dy,poly?P:null);
+const wzone=(L,W)=>wallZoneWidth(+$('wz').value,L,W);
 const toCustom=()=>{if(mode!=='custom'){customPts=lastPts.map(p=>[p[0],p[1]]);mode='custom'}};
 const STOPS=[[0,[22,22,30]],[.35,[61,89,161]],[.7,[224,175,104]],[1,[255,244,220]]];
 function ramp(t){t=Math.max(0,Math.min(1,t));for(let i=1;i<STOPS.length;i++){if(t<=STOPS[i][0]){const[a,ca]=STOPS[i-1],[b,cb]=STOPS[i],k=(t-a)/(b-a);return ca.map((v,j)=>Math.round(v+(cb[j]-v)*k))}}return STOPS[3][1]}
@@ -295,19 +210,8 @@ function calc(){
   let LMT=0,PWT=0;GL.forEach((q,k)=>{if(!q||!groups[k].on)return;const n=q.pts.length;LMT+=n*q.lm;PWT+=n*q.pw});
   let nnMax=0,minD=Infinity;
   pts.forEach((p,i)=>{let m=Infinity;pts.forEach((q,j)=>{if(i!==j){const d=Math.hypot(p[0]-q[0],p[1]-q[1]);if(d<m)m=d;if(d<minD)minD=d}});if(m<Infinity&&m>nnMax)nnMax=m});
-  const h2=h*h;
-  const Ed=(x,y)=>{let s=0;for(const[px,py,Io]of ALL){if(NC&&crosses(px,py,x,y,RP))continue;const d2=h2+(x-px)**2+(y-py)**2,c=h/Math.sqrt(d2);s+=Io(c)*c*c*c/h2}return s};
-  // sample grid
-  const cw=Math.min(160,Math.max(40,Math.round(160*Math.min(1,L/W)))),ch=Math.max(20,Math.round(cw*W/L));
-  const vals=new Float32Array(cw*ch),INS=new Uint8Array(cw*ch),WZ=wzone(L,W);
-  // 0 outside the room, 1 inside, 2 inside and clear of the wall zone
-  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const i=y*cw+x,px=(x+.5)/cw*L,py=(y+.5)/ch*W;if(poly&&!inPoly(px,py,RP))continue;
-    INS[i]=(poly?edgeDist(px,py,RP)>=WZ:(px>=WZ&&px<=L-WZ&&py>=WZ&&py<=W-WZ))?2:1;vals[i]=Ed(px,py)}
-  const E=Ed;
-  let mn=1e9,mx=0,mxi=0,sum=0,cnt=0;
-  for(let i=0;i<vals.length;i++){if(!INS[i])continue;const v=vals[i];if(v>mx)mx=v;
-    if(INS[i]===2){if(v<mn)mn=v;if(v>mxi)mxi=v;sum+=v;cnt++}}
-  if(!cnt){mn=0;cnt=1}const avg=sum/cnt,uni=avg?mn/avg:0;
+  const h2=h*h,Ed=directIlluminance(ALL,h,poly?RP:null),E=Ed,WZ=wzone(L,W);
+  const{cw,ch,vals,INS,cnt,min:mn,max:mxi,peak:mx,avg,uniformity:uni}=sampleWorkPlane(L,W,poly?RP:null,WZ,Ed);
   const Ec=Iof(1)/h2;
   $('kpi').innerHTML=`<b>${f(avg,0)} lx</b> avg · U ${f(uni,2)} · ${NT} lights${multi?` · ${nOn}/${groups.length} groups`:''}`;
   $('out').innerHTML=`<div class="results">
@@ -451,7 +355,7 @@ function drawSection(L,H,wp,h,xs,rB,rF,a,fr){
 }
 
 function drawOne(h,Iof,rB,rF,a,fr){
-  const Ec0=Iof(1)/(h*h),E=r=>{const c=h/Math.sqrt(h*h+r*r);return Iof(c)*c*c*c/(h*h)};
+  const Ec0=Iof(1)/(h*h),E=r=>illuminanceAt(Iof,h,r);
   const R=rF*1.2,k=135/R,steps=48;
   let Ec=0;for(let i=0;i<=80;i++)Ec=Math.max(Ec,E(R*i/80));Ec=Ec||1;
   const EB=E(rB),EF=E(rF);
@@ -489,12 +393,7 @@ function drawWall(){
   const d=+$('wd').value,sp=+$('ws').value,nn=Math.round(+$('wn').value);
   if(!(d>0&&sp>0&&nn>=1&&nn<=10)){$('wOut').innerHTML='<p class="err">Enter a distance and spacing above 0, and 1 to 10 lights.</p>';return}
   const {H,th,Iof,gF}=P;
-  const pad=Math.max(.6,sp*.75),Wd=(nn-1)*sp+2*pad,ys=[];
-  for(let i=0;i<nn;i++)ys.push(pad+i*sp);
-  const cw=160,ch=Math.min(320,Math.max(40,Math.round(cw*H/Wd))),vals=new Float32Array(cw*ch);let mx=0;
-  for(let j=0;j<ch;j++){const z=(j+.5)/ch*H;for(let i=0;i<cw;i++){const y=(i+.5)/cw*Wd;let e=0;
-    for(const yi of ys){const dy=y-yi,r2=d*d+dy*dy+z*z,r=Math.sqrt(r2);e+=Iof(z/r)*d/(r*r2)}
-    vals[j*cw+i]=e;if(e>mx)mx=e}}
+  const{Wd,ys,cw,ch,vals,peak:mx}=wallScallops({distance:d,spacing:sp,count:nn,H,Iof});
   const cv=$('wcv');cv.width=cw;cv.height=ch;const g=cv.getContext('2d'),im=g.createImageData(cw,ch);
   for(let i=0;i<vals.length;i++){const c=ramp(Math.sqrt(vals[i]/mx));im.data[i*4]=c[0];im.data[i*4+1]=c[1];im.data[i*4+2]=c[2];im.data[i*4+3]=255}
   g.putImageData(im,0,0);
@@ -534,20 +433,7 @@ function renderSaved(){
 function suggest(){
   const L=+$('L').value,W=+$('W').value,H=+$('H').value,wp=+$('wp').value,T=+$('tg').value,h=H-wp,md=model();
   if(!(md&&L>0&&W>0&&h>0&&T>0)){$('sug').innerHTML='<p class="err">Enter valid room, fixture and target values first.</p>';return}
-  const{Iof}=md,h2=h*h,G=24,fm=form,P=roomP(L,W),NC=!isConvex(P),WZ=wzone(L,W),c=[];
-  // sample points inside the room: [x, y, inside the wall zone?]
-  const S=[];for(let u=0;u<G;u++)for(let v=0;v<G;v++){const px=(u+.5)/G*L,py=(v+.5)/G*W;if(poly&&!inPoly(px,py,P))continue;S.push([px,py,poly?edgeDist(px,py,P)>=WZ:(px>=WZ&&px<=L-WZ&&py>=WZ&&py<=W-WZ)])}
-  for(let x=1;x<=12;x++)for(let y=1;y<=12;y++){const r=(L/x)/(W/y);if(r<.6||r>1.67||(fm==='perim'&&(x<2||y<2)))continue;const ly=placeLights(fm,x,y,L,W,false,0,0,P);if(ly.pts.length)c.push([ly.pts.length,x,y,ly])}
-  const sk=q=>Math.abs(Math.log((L/q[1])/(W/q[2])));
-  c.sort((p,q)=>p[0]-q[0]||sk(p)-sk(q));
-  let hit=null;
-  for(const[N,x,y,ly]of c){
-    const pts=ly.pts;let sum=0,mn=1e9,cn=0;
-    for(const[px,py,z]of S){let e=0;for(const[qx,qy]of pts){if(NC&&crosses(qx,qy,px,py,P))continue;const cc=h/Math.sqrt(h2+(px-qx)**2+(py-qy)**2);e+=Iof(cc)*cc*cc*cc/h2}if(z){sum+=e;cn++;if(e<mn)mn=e}}
-    if(!cn)continue;
-    const avg=sum/cn;
-    if(avg>=T&&mn/avg>=.5){hit={N,x,y,avg,uni:mn/avg,sx:ly.sx,sy:ly.sy};break}
-  }
+  const fm=form,hit=suggestGrid({L,W,h,target:T,form:fm,Iof:md.Iof,shape:poly?roomP(L,W):null,wallZone:wzone(L,W)});
   $('sug').innerHTML=hit?`<p><b>${hit.x} × ${hit.y} ${FORMS[fm][0].toLowerCase()}</b> (${hit.N} fixtures${poly?' inside the room shape':''}${groups.length>1?', selected group on its own':''}) gives about ${f(hit.avg,0)} lx on average at ${f(hit.uni,2)} uniformity, spaced ${fm==='hex'?f(hit.sx)+' m hexagonal':f(hit.sx)+' × '+f(hit.sy)+' m'}. <button class="chip" type="button" data-apply="${hit.x}x${hit.y}">Use this layout</button></p>`:`<p class="err">No ${FORMS[fm][0].toLowerCase()} layout up to 12 × 12 reaches ${f(T,0)} lx evenly. Try more lumens per fixture or a wider beam.</p>`;
 }
 function copySum(){
