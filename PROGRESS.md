@@ -74,6 +74,7 @@ _Last updated: 2026-11-11_
 ## Log
 
 ### 2026-11-11
+- **PROGRESS.md + CLAUDE.md split** (8ac13cf): progress tracking moved out of CLAUDE.md; CLAUDE.md now holds working rules, architecture, conventions, reference numbers and verification method.
 - **Tailwind CSS v4** (`3f306b9`): stylesheet rewritten as theme tokens + base + components; `index.html` layout in utilities. Pixel-identical to the original in 14/16 screenshots.
   - Fixed: the corner-coordinates textarea overflowed its panel by 22 px (it was `content-box` inside `<details>`).
   - Fixed: the progressive blur at the screen edges had stopped working in the step 2 build (Vite's CSS minifier dropped the `backdrop-filter`); it works again.
