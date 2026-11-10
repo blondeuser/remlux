@@ -1,0 +1,19 @@
+# dependencies & build output
+node_modules/
+dist/
+coverage/
+*.local
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# AI agent tooling installed per machine (restore: see CLAUDE.md "Restoring agent tooling")
+.agents/
+.codex/
+.claude/skills/
+.claude/agents/
+.claude/settings.local.json
