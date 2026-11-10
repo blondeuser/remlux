@@ -2,10 +2,32 @@
 
 ## Project
 
-REMLUX is a single-file web app for calculating and visualizing how light spreads in a room, with luminaires organized in groups, in the spirit of DIALux. It is meant for early lighting layout; final results get confirmed in DIALux with the real IES/LDT files.
+REMLUX is a web app for calculating and visualizing how light spreads in a room, with luminaires organized in groups, in the spirit of DIALux. It is meant for early lighting layout; final results get confirmed in DIALux with the real IES/LDT files.
 
-- `REMLUX_HTML.html`: the whole app (HTML + CSS + one inline `<script>`, ~1000 lines, no build step, no JS dependencies; only Google Fonts: Doto, JetBrains Mono). Open it in a browser to run.
+Stack: Vite + TypeScript (strict) + Vitest (jsdom). No runtime JS dependencies; only Google Fonts (Doto, JetBrains Mono). Node.js is at `C:\Program Files\nodejs` (may need adding to PATH in Git Bash: `export PATH="/c/Program Files/nodejs:$PATH"`).
+
+### Commands
+- `npm run dev`: dev server with live reload (http://localhost:5173).
+- `npm test`: Vitest. Run after every change to the maths.
+- `npm run typecheck`: `tsc --noEmit`.
+- `npm run build`: static site in `dist/` (deploy anywhere static).
+- `npm run build:single`: one self-contained `dist-single/index.html` (like the original single-file app; good for sharing or publishing as an artifact).
+
+### Layout
+- `index.html`: markup only (the four pages).
+- `src/styles.css`: all CSS.
+- `src/main.ts`: entry; imports the CSS and the app.
+- `src/legacy/app.js`: the original app script, moved over unchanged (plain JS, not type-checked, runs as an ES module in strict mode). Being split into `src/engine/` (pure maths, no DOM, unit-tested), `src/render/`, `src/ui/`, `src/state/`. New code goes in TypeScript in those folders, not in `legacy/`.
+- `tests/app.smoke.test.ts`: boots the whole app with defaults and checks the headline numbers (330 lx avg, U 0.74, 405 lx wall peak, Suggest 4 × 3). If a refactor changes these, the maths changed; investigate before updating them.
 - `REMLUX_MD.md`: the app's UI text and method notes as plain Markdown (a copy of the page's copy, not code).
+- The original `REMLUX_HTML.html` is in git history (first commit).
+
+### Refactor plan (in order, app working after each step)
+1. ~~git~~ ✓  2. ~~Vite + TS scaffold~~ ✓
+3. Move maths into `src/engine/` with Vitest tests (photometry/IES, illuminance, geometry, layout, suggest).
+4. Split rendering and UI into modules; version the localStorage state so old saved rooms keep loading.
+5. Static hosting (Cloudflare Pages / Netlify / GitHub Pages), optional PWA for offline use.
+6. New features: LDT files, full C-plane IES, PDF export.
 
 ### App structure
 Four pages (`PAGES = ['room','fixture','visualize','stats']`, switched by `showPage`):
@@ -14,7 +36,7 @@ Four pages (`PAGES = ['room','fixture','visualize','stats']`, switched by `showP
 - **Visualize**: floor plan heatmap (`#cv` canvas + `#ov` SVG overlay; lights draggable → switches layout to Custom), section along the length, wall scallops (`#wcv` / `#wov`).
 - **Stats**: work plane table (Ē, Emin, Emax, U₀ = Emin/Ē, Ud = Emin/Emax), lux distribution, each downlight, spec summary, method.
 
-### Key functions (in `REMLUX_HTML.html`)
+### Key functions (in `src/legacy/app.js`)
 - `calc()`: main calculation + render pass.
 - `parseIES` / `iesI`: IES file parsing (C-planes averaged into one rotationally symmetric curve) and intensity interpolation. `model(q)`: builds the intensity model.
 - Groups: `groups`, `act`, `renderGroups`, `snapGroup`, `saveActive`, `loadGroup`, `groupLights`.
@@ -29,6 +51,9 @@ Direct light only. Room surfaces / reflectance and the radiosity (reflected ligh
 ## Installed skills
 
 All skills are installed at project level in `.agents/skills/`, symlinked into `.claude/skills/` for Claude Code. Invoke with `/<skill-name>` or let them trigger automatically.
+
+### Restoring agent tooling
+`.agents/`, `.codex/`, `.claude/skills/`, `.claude/agents/` and `.claude/settings.local.json` are git-ignored (machine-local). On a fresh clone: `npx skills experimental_install` (restores the skills listed in `skills-lock.json`), then `npx impeccable install` (impeccable skill, agents and hooks).
 
 ### emilkowalski/skills (18)
 Install: `npx skills@latest add emilkowalski/skills`
