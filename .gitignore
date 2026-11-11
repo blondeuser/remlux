@@ -18,3 +18,5 @@ Thumbs.db
 .claude/skills/
 .claude/agents/
 .claude/settings.local.json
+dist-share/
+.vercel/

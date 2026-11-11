@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildModel, deg, iesIntensity, parseIES, rad, type FixtureModel } from '../../src/engine';
+import { buildModel, deg, iesIntensity, parseIES, parseLDT, parsePhotometry, rad, type FixtureModel } from '../../src/engine';
 
 const fixture = (name: string) => readFileSync(resolve(__dirname, '../fixtures', name), 'utf8');
 
@@ -112,5 +112,28 @@ describe('IES fixture model', () => {
 
   it('falls back to the generic beam when IES is chosen but no file is loaded', () => {
     expect(buildModel({ phot: 'ies', ies: null, angle: 36, lumens: 800 })!.ang).toBeCloseTo(36);
+  });
+});
+
+describe('LDT (EULUMDAT)', () => {
+  it('gives the same curve, flux and watts as the matching IES file', () => {
+    const ies = parseIES(fixture('downlight-1plane.ies'), 'a.ies');
+    const ldt = parseLDT(fixture('downlight-1plane.ldt'), 'a.ldt');
+    expect(ldt.v).toEqual(ies.v);
+    ldt.c.forEach((x, i) => expect(x).toBeCloseTo(ies.c[i], 6));
+    expect(ldt.flux).toBeCloseTo(ies.flux, 3);
+    expect(ldt.watts).toBe(12);
+    expect(ldt.brand).toBe('Test');
+    expect(ldt.name).toBe('Test Downlight 30');
+  });
+  it('reads the manufacturer from an IES file', () => {
+    expect(parseIES(fixture('downlight-1plane.ies'), 'a.ies').brand).toBe('Test');
+  });
+  it('parsePhotometry picks the parser from the extension, then the content', () => {
+    expect(parsePhotometry(fixture('downlight-1plane.ldt'), 'x.ldt').watts).toBe(12);
+    expect(parsePhotometry(fixture('downlight-1plane.ies'), 'x.txt').name).toBe('Test Downlight 30');
+  });
+  it('rejects a truncated file with a readable message', () => {
+    expect(() => parseLDT('Test\n1\n1\n', 'x.ldt')).toThrow(/incomplete/);
   });
 });

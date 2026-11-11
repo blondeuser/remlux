@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:share": "tsc --noEmit && vite build --mode share",
     "build:single": "tsc --noEmit && vite build --mode single",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -16,11 +17,18 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^26.6.6",
+    "@types/three": "0.186.0",
     "jsdom": "^31.0.0",
+    "pixelmatch": "^8.0.0",
+    "playwright-core": "^1.65.0",
+    "pngjs": "^7.0.0",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",
     "vite-plugin-singlefile": "^2.3.4",
     "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "three": "0.186.0"
   }
 }

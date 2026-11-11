@@ -6,8 +6,10 @@ export const deg = (r: number) => r * 180 / Math.PI;
 
 /** A parsed IES file, reduced to one rotationally symmetric intensity curve. */
 export interface IesPhotometry {
-  /** Luminaire name from [LUMINAIRE] / [LUMCAT], or the file name. */
+  /** Luminaire name from [LUMINAIRE] / [LUMCAT] (IES) or the luminaire line (LDT), or the file name. */
   name: string;
+  /** Manufacturer from [MANUFAC] (IES) or the first line (LDT); '' when the file does not say. */
+  brand: string;
   file: string;
   /** Vertical angles γ in degrees (0 = straight down). */
   v: number[];
@@ -33,16 +35,38 @@ export function iesIntensity(P: Pick<IesPhotometry, 'v' | 'c'>, gammaDeg: number
 }
 
 /**
+ * Average C-planes into one rotationally symmetric curve (trapezoid weights over the plane angles)
+ * and integrate its flux. `data` holds one row of `v.length` values per plane, already in cd.
+ * Shared by the IES and LDT parsers. Throws when there is no downward light.
+ */
+export function reducePlanes(v: number[], hz: number[], data: number[], k: number): { c: number[]; flux: number; up: number } {
+  const nv = v.length, nh = hz.length, c: number[] = new Array(nv).fill(0);
+  const wt = hz.map((h, j) => nh === 1 ? 1 : ((j < nh - 1 ? hz[j + 1] - h : 0) + (j > 0 ? h - hz[j - 1] : 0)) / 2);
+  const ws = wt.reduce((s, x) => s + x, 0) || 1;
+  for (let j = 0; j < nh; j++) for (let q = 0; q < nv; q++) c[q] += data[j * nv + q] * k * wt[j] / ws;
+  const curve = { v, c };
+  let Fd = 0, Fu = 0;
+  for (let s = 0; s < 1800; s++) {
+    const g = (s + .5) * .1, dF = 2 * Math.PI * iesIntensity(curve, g) * Math.sin(rad(g)) * rad(.1);
+    if (g < 90) Fd += dF; else Fu += dF;
+  }
+  if (Fd <= 0) throw Error('This file has no downward light.');
+  return { c, flux: Fd + Fu, up: Fu / (Fd + Fu) };
+}
+
+/**
  * Parse an IES LM-63 file (Type C photometry only).
  * C-planes are averaged with trapezoid weights into one rotationally symmetric curve.
  * Throws an Error with a user-facing message when the file can't be used.
  */
 export function parseIES(txt: string, file: string): IesPhotometry {
   const lines = txt.split(/\r?\n/);
-  let i = 0, name = '';
+  let i = 0, name = '', brand = '';
   for (; i < lines.length; i++) {
     const l = lines[i].trim(), m = l.match(/^\[(LUMINAIRE|LUMCAT)\]\s*(.*)/i);
     if (m && !name && m[2]) name = m[2].trim();
+    const mb = l.match(/^\[MANUFAC\]\s*(.*)/i);
+    if (mb && !brand) brand = mb[1].trim();
     if (/^TILT\s*=/i.test(l)) break;
   }
   if (i >= lines.length) throw Error('No TILT= line found, so this does not look like an IES file.');
@@ -60,19 +84,9 @@ export function parseIES(txt: string, file: string): IesPhotometry {
   need(nv + nh + nv * nh);
   const v = N.slice(p, p + nv); p += nv;
   const hz = N.slice(p, p + nh); p += nh;
-  const k = mult * (bf > 0 ? bf : 1), c: number[] = new Array(nv).fill(0);
-  // trapezoid weights across the horizontal planes given
-  const wt = hz.map((h, j) => nh === 1 ? 1 : ((j < nh - 1 ? hz[j + 1] - h : 0) + (j > 0 ? h - hz[j - 1] : 0)) / 2);
-  const ws = wt.reduce((s, x) => s + x, 0) || 1;
-  for (let j = 0; j < nh; j++) for (let q = 0; q < nv; q++) c[q] += N[p + j * nv + q] * k * wt[j] / ws;
-  const curve = { v, c };
-  let Fd = 0, Fu = 0;
-  for (let s = 0; s < 1800; s++) {
-    const g = (s + .5) * .1, dF = 2 * Math.PI * iesIntensity(curve, g) * Math.sin(rad(g)) * rad(.1);
-    if (g < 90) Fd += dF; else Fu += dF;
-  }
-  if (Fd <= 0) throw Error('This file has no downward light.');
-  return { name: name || file.replace(/\.ies$/i, ''), file, v, c, watts: watts > 0 ? watts : 0, flux: Fd + Fu, up: Fu / (Fd + Fu) };
+  const k = mult * (bf > 0 ? bf : 1);
+  const { c, flux, up } = reducePlanes(v, hz, N.slice(p, p + nh * nv), k);
+  return { name: name || file.replace(/\.ies$/i, ''), brand, file, v, c, watts: watts > 0 ? watts : 0, flux, up };
 }
 
 export interface FixtureInput {

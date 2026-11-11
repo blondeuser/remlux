@@ -1,18 +1,32 @@
 // Legacy app script, moved from REMLUX_HTML.html. Runs as an ES module (strict mode).
 // The maths lives in src/engine (pure, tested); this file keeps the UI, state and drawing,
 // with thin wrappers that read the on-screen inputs and the global room shape.
-import{rad,deg,parseIES,buildModel,layout,placeLights as placeLightsE,placeIn as placeInE,areaOf,
+import{rad,deg,parsePhotometry,buildModel,layout,placeLights as placeLightsE,placeIn as placeInE,areaOf,
   rectPoly,inPoly,polyArea,polyPerim,isConvex,edgeDist,crosses,inwardN,insetPoly,isSimple,shapePreset,normalizePoly,
   directIlluminance,illuminanceAt,wallZoneWidth,sampleWorkPlane,wallScallops,suggestGrid}from'../engine/index.ts';
+import{newIsoView,attachIsoControls}from'../render/iso.ts';
+import{initRoomThree,drawRoom3D,invalidateRoom3D,hideRoom3D}from'./../ui/roomThree.ts';
+import{mountLibraryPicker}from'../ui/libraryPicker.ts';
+import{initPlanImage}from'../ui/planImage.ts';
 const $=id=>document.getElementById(id);
+let lib;  // fixture library picker, mounted below once calc() exists
 const f=(n,d=2)=>{const t=(+n).toFixed(d);return t.includes('.')?t.replace(/\.?0+$/,''):t};
 const GRIDS=[[2,2],[3,2],[3,3],[4,3],[4,4],[5,4],[6,4],[6,6]];
 const ANG=[10,15,24,36,45,60,90];
-const layers={map:true,beam:true,field:false,dim:true,move:true,snap:true};
+const layers={map:true,beam:true,field:false,dim:true,move:true,group:false,snap:true,iso:false};
+let isoD=null,isoSig='';const isoView=newIsoView();
 // ---- floor plan dimensions, drawn in screen pixels so text stays readable at any size ----
 let dimD=null;
+// isometric 3D view: shows the same heat map and lights on a floor with walls, instead of the flat plan
+function drawIso3d(){
+  const on=layers.iso&&isoD&&page==='visualize';
+  const el=$('iso');
+  if(!on){hideRoom3D();return}
+  const w=Math.floor($('planwrap').clientWidth);if(w<80)return;
+  const sig=[isoD.L,isoD.W,isoD.H,isoD.poly?JSON.stringify(isoD.poly):''].join();if(sig!==isoSig){isoSig=sig;isoView.zoom=0}  // room changed: fit again, keep the viewing angle
+  drawRoom3D(el,{...isoD,width:w,height:Math.max(320,Math.min(640,Math.round(w*.75))),view:isoView,showBeams:layers.beam,heat:$('cv')})}
 function drawDims(){
-  const sv=$('dim'),wrap=$('planwrap'),on=!!(dimD&&layers.dim);
+  const sv=$('dim'),wrap=$('planwrap'),on=!!(dimD&&layers.dim&&!layers.iso);
   wrap.classList.toggle('nodim',!on);if(!on){sv.innerHTML='';return}
   const st=$('stage'),wr=wrap.getBoundingClientRect(),sr=st.getBoundingClientRect();
   const ox=sr.left-wr.left+st.clientLeft,oy=sr.top-wr.top+st.clientTop,pw=st.clientWidth,ph=st.clientHeight;
@@ -53,9 +67,8 @@ function drawDims(){
   }
   sv.setAttribute('viewBox',`0 0 ${wr.width} ${wr.height}`);
   sv.innerHTML=s;
-  $('dimNote').textContent=hid?'Some spacings are too narrow to label here. See the table under Each downlight for exact positions.':'';
 }
-const SCALES=['auto',100,200,500,1000,2000];let lxScale=500,mapView='total';
+const SCALES=['auto',100,200,500,1000,2000];let lxScale=500,oneScale='auto',mapView='total';  // lxScale: floor plan colour scale; oneScale: One downlight card (independent)
 let genVals=null,form='grid';
 const FORMS={grid:['Grid','Rows and columns, with half a spacing to the walls. The standard for even ambient light in regular rooms.'],
   stagger:['Staggered','Like brickwork: every other row sits midway between the lights above, with one fewer light. Fills the dark spots between rows; useful in long rooms or when joists dictate positions.'],
@@ -69,15 +82,15 @@ function model(q){
 }
 // ---- lighting groups: each has its own fixture and layout; every group that is on adds to the result ----
 const GCOL=['#7aa2f7','#9ece6a','#ff9e64','#bb9af7','#7dcfff','#f7768e','#e0af68'];
-const GV=['ang','lm','pw','fr','nx','ny','dx','dy','ax','ay','aw','ah'];
-let groups=[],act=0,areaOn=false,gStats=[];
+const GV=['ang','lm','pw','fr','nx','ny','dx','dy','ax','ay','aw','ah','brand','fixname'];
+const fixLabel=v=>[v&&v.brand,v&&v.fixname].map(s=>(s||'').trim()).filter(Boolean).join(' ');  // "Brand Fixture name", or '' when both are empty
+let statScope='all',groups=[],act=0,areaOn=false,gStats=[];
 const cloneP=a=>a?a.map(p=>[p[0],p[1]]):null;
 function renderGroups(){
   const g0=groups[act]||{name:''};
-  const html=`<div class="glist">${groups.map((g,k)=>`<div class="grow${k===act?' on':''}" style="--gc:${g.col}"><button type="button" class="gsel" data-gsel="${k}" aria-pressed="${k===act}"><i></i><span>${esc(g.name)}</span><small>${gStats[k]??'–'} lights</small></button><button type="button" class="chip gtog" data-gtog="${k}" aria-pressed="${g.on}" aria-label="Include ${esc(g.name)} in the calculation">${g.on?'On':'Off'}</button></div>`).join('')}</div>
+  const html=`<div class="glist">${groups.map((g,k)=>`<div class="grow${k===act?' on':''}" style="--gc:${g.col}"><button type="button" class="gsel" data-gsel="${k}" aria-pressed="${k===act}"${fixLabel(g.vals)?` title="${esc(fixLabel(g.vals))}"`:''}><i></i><span>${esc(g.name)}</span><small>${gStats[k]??'–'} lights</small></button><button type="button" class="chip gtog" data-gtog="${k}" aria-pressed="${g.on}" aria-label="Include ${esc(g.name)} in the calculation">${g.on?'On':'Off'}</button></div>`).join('')}</div>
     <label>Selected group name</label><input type="text" class="gname" maxlength="30" value="${esc(g0.name)}" aria-label="Selected group name">
-    <div class="actions"><button class="chip" type="button" data-gact="add">+ Add group</button><button class="chip" type="button" data-gact="dup">Duplicate</button>${groups.length>1?'<button class="chip" type="button" data-gact="del">Remove</button>':''}</div>
-    <p class="note" style="margin-top:6px">${groups.length>1?'Tap a group to edit its fixture and layout. Every group that is On is calculated together.':'Add a group for a second kind of light, for example accent lights over a table or a perimeter of wall washers.'}</p>`;
+    <div class="actions"><button class="chip" type="button" data-gact="add">+ Add group</button><button class="chip" type="button" data-gact="dup">Duplicate</button>${groups.length>1?'<button class="chip" type="button" data-gact="del">Remove</button>':''}</div>`;
   const ae=document.activeElement,typing=ae&&ae.classList&&ae.classList.contains('gname');
   document.querySelectorAll('.grpHost').forEach(e=>{if(!(typing&&e.contains(ae)))e.innerHTML=html})}
 function snapGroup(){return{vals:Object.fromEntries(GV.map(i=>[i,$(i).value])),mode,customPts:cloneP(customPts),form,phot,ies,genVals:genVals?{...genVals}:null,areaOn}}
@@ -116,7 +129,7 @@ function chips(){
   $('gridChips').innerHTML=GRIDS.map(([c,r])=>`<button class="chip" type="button" data-g="${c}x${r}" aria-pressed="${nx===c&&ny===r}">${c} × ${r}</button>`).join('');
   $('angChips').innerHTML=ANG.map(v=>`<button class="chip" type="button" data-a="${v}" aria-pressed="${a===v}">${v}°</button>`).join('');
   document.querySelectorAll('[data-l]').forEach(b=>b.setAttribute('aria-pressed',layers[b.dataset.l]));
-  $('photChips').innerHTML=[['gen','Generic beam'],['ies',ies?'IES: '+esc(ies.name.slice(0,24)):'Load IES file']].map(([k,t])=>`<button class="chip" type="button" data-p="${k}" aria-pressed="${phot===k}">${t}</button>`).join('')+(ies?`<button class="chip" type="button" data-p="load">Load another…</button>`:'');
+  $('photChips').innerHTML=[['gen','Generic beam'],['ies',ies?'IES: '+esc(ies.name.slice(0,24)):'Load IES / LDT file']].map(([k,t])=>`<button class="chip" type="button" data-p="${k}" aria-pressed="${phot===k}">${t}</button>`).join('')+`<button class="chip" type="button" data-p="lib" aria-pressed="${!!lib&&lib.isOpen()}">Library</button>`+(ies?`<button class="chip" type="button" data-p="load">Load another…</button>`:'');
   const iz=!!(phot==='ies'&&ies),FX=['ang','lm','pw'];
   if(iz){if(!genVals)genVals=Object.fromEntries(FX.map(i=>[i,$(i).value]));$('lm').value=f(ies.flux,0);$('pw').value=ies.watts>0?f(ies.watts,1):''}
   else if(genVals){FX.forEach(i=>$(i).value=genVals[i]);genVals=null}
@@ -124,12 +137,12 @@ function chips(){
   $('pw').placeholder=iz?'not in file':'';$('angChips').style.display=iz?'none':'';
   if(!groups.length)saveActive();renderGroups();
   $('areaChips').innerHTML=[['room','Whole room'],['area','Part of the room']].map(([k,t])=>`<button class="chip" type="button" data-area="${k}" aria-pressed="${(k==='area')===areaOn}">${t}</button>`).join('');
-  $('areaBox').hidden=!areaOn;$('areaNote').hidden=!areaOn;
+  $('areaBox').hidden=!areaOn;
   const sk=poly?(poly._k||'custom'):'rect';
   $('shapeChips').innerHTML=Object.entries(SHAPES).map(([k,t])=>`<button class="chip" type="button" data-shape="${k}" aria-pressed="${sk===k}">${t}</button>`).join('')+`<button class="chip" type="button" data-shape="edit" aria-pressed="${shapeEdit}">${shapeEdit?'Editing on plan…':'Draw / edit on plan'}</button>`;
+  $('shapeEditBtn').setAttribute('aria-pressed',String(shapeEdit));
   $('polyBox').hidden=!poly;
   $('formChips').innerHTML=Object.entries(FORMS).map(([k,[t]])=>`<button class="chip" type="button" data-f="${k}" aria-pressed="${form===k&&mode!=='custom'}">${t}</button>`).join('');
-  $('formNote').textContent=mode==='custom'?'Custom layout. Pick a formation to start again from a pattern.':FORMS[form][1];
   $('nxLab').textContent=form==='perim'?'Lights · length':'Columns · length';$('nyLab').textContent=form==='perim'?'Lights · width':'Rows · width';
   $('dy').disabled=form==='hex'&&mode!=='custom';
   $('scaleChips').innerHTML='<span class="note" style="margin:0;align-self:center">Colour scale</span>'+SCALES.map(v=>`<button class="chip" type="button" data-s="${v}" aria-pressed="${String(lxScale)===String(v)}">${v==='auto'?'Auto':v+' lx'}</button>`).join('');
@@ -139,6 +152,7 @@ document.addEventListener('click',e=>{
   const b=e.target.closest('.chip'); if(!b) return;
   if(b.dataset.g){const[c,r]=b.dataset.g.split('x');$('nx').value=c;$('ny').value=r;if(mode==='custom')mode='even'}
   if(b.dataset.a)$('ang').value=b.dataset.a;
+  if(b.dataset.ss)statScope=b.dataset.ss;
   if(b.dataset.l)layers[b.dataset.l]=!layers[b.dataset.l];
   if(b.dataset.m){if(b.dataset.m==='custom')toCustom();else mode=b.dataset.m}
   if(b.dataset.f){form=b.dataset.f;if(mode==='custom')mode='even'}
@@ -149,17 +163,22 @@ document.addEventListener('click',e=>{
     if(ga==='dup'){const g=cp(groups[act]);Object.assign(g,{name:groups[act].name+' copy',col:GCOL[n%GCOL.length],on:true});groups.push(g);loadGroup(n)}
     if(ga==='del'&&n>1){groups.splice(act,1);loadGroup(Math.min(act,groups.length-1))}}
   if(b.dataset.v)mapView=b.dataset.v;
+  if(b.dataset.os)oneScale=b.dataset.os==='auto'?'auto':+b.dataset.os;
   if(b.dataset.s)lxScale=b.dataset.s==='auto'?'auto':+b.dataset.s;
+  if(b.dataset.p==='lib'){lib.toggle();return}
   if(b.dataset.p){const k=b.dataset.p;if(k==='gen')phot='gen';else if(k==='load'||!ies){$('iesFile').click();return}else phot='ies'}
   calc();
 });
 const dirty=on=>{$('updBtn').classList.toggle('dirty',on);document.querySelector('.upd').classList.toggle('show',on);$('updMsg').textContent=on?'Inputs changed. Tap Update to apply.':''};
+window.addEventListener('themechange',()=>calc());  // the 3D view reads its colours at draw time
+lib=mountLibraryPicker($('libPanel'),(ph,e)=>{ies=ph;phot='ies';$('brand').value=ph.brand||e.brand;$('fixname').value=ph.name;lib.close();calc()},undefined,()=>chips());
 $('iesFile').addEventListener('change',e=>{
   const fl=e.target.files&&e.target.files[0];if(!fl)return;
-  fl.text().then(t=>{try{ies=parseIES(t,fl.name);phot='ies';calc()}catch(err){$('iesInfo').innerHTML=`<span class="err">${esc(err.message)}</span>`}});
+  fl.text().then(t=>{try{ies=parsePhotometry(t,fl.name);phot='ies';calc()}catch(err){$('iesInfo').innerHTML=`<span class="err">${esc(err.message)}</span>`}});
   e.target.value='';
 });
 ['ax','ay','aw','ah','L','W','H','wp','wz','nx','ny','ang','lm','pw','fr'].forEach(i=>$(i).addEventListener('input',()=>{if((i==='nx'||i==='ny')&&mode==='custom')mode='even';dirty(true)}));
+['brand','fixname'].forEach(i=>$(i).addEventListener('input',()=>calc()));  // labels only: update everything straight away
 ['dx','dy'].forEach(i=>$(i).addEventListener('input',()=>{mode='fixed';dirty(true)}));
 
 function calc(){
@@ -172,17 +191,18 @@ function calc(){
     return;
   }
   const{Iof,th,gF,llf}=md,a=md.ang;
-  if(phot==='ies'&&ies){$('ang').value=f(a,0);$('iesInfo').textContent=`${ies.file}: ${f(ies.flux,0)} lm in the file${ies.up>.005?`, ${f(ies.up*100,0)}% upward`:''}. Beam ${f(a,0)}°, field ${f(2*deg(gF),0)}°. Beam angle, lumens and watts are taken from the file.`}
-  else $('iesInfo').textContent=ies?'':'Load a manufacturer IES file to use the real light distribution.';
+  if(phot==='ies'&&ies){$('ang').value=f(a,0);$('iesInfo').textContent=''}
+  else $('iesInfo').textContent='';
   const fr=Math.max(.005,(+$('fr').value||50)/1000);
-  $('frNote').textContent='Diameter '+f(fr*2000,0)+' mm, drawn to scale.';
   const pw=IZ?ies.watts:(+$('pw').value||0);
   const rBeam=h*Math.tan(th);
   const rField=h*Math.tan(Math.min(gF,rad(85)));
   let sx,sy,offx,offy,pts=[],labs=[];
   if(poly&&prevL&&(L!==prevL||W!==prevW)){const k=poly._k;poly=poly.map(([x,y])=>[x*L/prevL,y*W/prevW]);poly._k=k}
   const RP=roomP(L,W),RA=Math.abs(polyArea(RP)),RPer=polyPerim(RP),NC=!isConvex(RP);
-  $('shapeNote').innerHTML=poly?`${RP.length} corners, ${f(RA,1)} m² floor, ${f(RPer,1)} m of wall. Length and width are the overall size; changing them stretches the shape.${isSimple(RP)?'':' <span class="err">Walls cross each other. Drag the corners to fix it.</span>'}${NC?' Walls block light between the arms of the room.':''}`:'Rectangle from length and width. Pick a shape or draw your own on the plan.';
+  // only a warning is shown here; the explanatory text was removed
+  $('shapeNote').innerHTML=poly&&!isSimple(RP)?'<span class="err">Walls cross each other. Drag the corners to fix it.</span>':'';
+  $('shapeNote').hidden=!$('shapeNote').innerHTML;
   if(poly){const tx=RP.map(q=>f(q[0],3)+', '+f(q[1],3)).join('\n');if(tx!==polySig&&document.activeElement!==$('polyTxt')){$('polyTxt').value=tx;polySig=tx}}
   ['L','W'].forEach(i=>{const lb=document.querySelector(`label[for="${i}"]`);lb.textContent=(i==='L'?'Length':'Width')+(poly?' (overall)':'')});
   if(mode==='custom'&&!(customPts&&customPts.length))mode='even';
@@ -213,16 +233,25 @@ function calc(){
   const h2=h*h,Ed=directIlluminance(ALL,h,poly?RP:null),E=Ed,WZ=wzone(L,W);
   const{cw,ch,vals,INS,cnt,min:mn,max:mxi,peak:mx,avg,uniformity:uni}=sampleWorkPlane(L,W,poly?RP:null,WZ,Ed);
   const Ec=Iof(1)/h2;
+  // statistics scope: all groups that are on, or just the selected group (even if it is switched off)
+  const si=statScope!=='all'&&groups[+statScope]&&GL[+statScope]?+statScope:-1,sc=multi&&si>=0,SG=sc?GL[si]:GL[act],SL=sc?SG.pts.map(([x,y],i)=>[x,y,SG.md.Iof,si,i]):ALL,Es=sc?directIlluminance(SL,h,poly?RP:null):Ed;
+  const SS=sc?sampleWorkPlane(L,W,poly?RP:null,WZ,Es):{cw,ch,vals,INS,cnt,min:mn,max:mxi,peak:mx,avg,uniformity:uni};
+  const{vals:svals,INS:sINS,cnt:scnt,min:smn,max:smxi,peak:smx,avg:savg,uniformity:suni}=SS;
+  const NTs=SL.length,nOns=sc?1:nOn;let LMTs=0,PWTs=0;GL.forEach((q,k)=>{if(!q||(sc?k!==si:!groups[k].on))return;LMTs+=q.pts.length*q.lm;PWTs+=q.pts.length*q.pw});
+  $('statScope').innerHTML=multi?`<span class="text-mute">Statistics for</span><button class="chip" type="button" data-ss="all" aria-pressed="${!sc}">All groups</button>${groups.map((g,k)=>`<button class="chip" type="button" data-ss="${k}" aria-pressed="${k===si}"><span style="color:${g.col}">●</span> ${esc(g.name)}</button>`).join('')}`:'';
+
   $('kpi').innerHTML=`<b>${f(avg,0)} lx</b> avg · U ${f(uni,2)} · ${NT} lights${multi?` · ${nOn}/${groups.length} groups`:''}`;
+  const gLab=k=>fixLabel(k===act?{brand:$('brand').value,fixname:$('fixname').value}:groups[k].vals),nmK=(sc?[si]:groups.map((g,k)=>k).filter(k=>groups[k].on)).filter(k=>gLab(k));
   $('out').innerHTML=`<div class="results">
-    <div class="res hero"><b>Ø ${f(2*rBeam)} m</b><span>spread of each ${multi?`<b style="color:${groups[act].col}">${esc(groups[act].name)}</b> `:''}downlight on the floor at 50% intensity (field Ø ${f(2*rField)} m at 10%)</span></div>
-    <div class="res"><b>${f(Ec,0)} lx</b><span>under one fixture alone</span></div>
-    <div class="res"><b>${f(avg,0)} lx</b><span>average, all ${NT} fixtures${multi?` in ${nOn} group${nOn===1?'':'s'}`:''}</span></div>
-    <div class="res"><b>${f(mn,0)}–${f(mxi,0)} lx</b><span>lowest to highest${WZ>0?`, ${f(WZ)} m wall zone left out`:''}</span></div>
-    <div class="res"><b>${f(uni,2)}</b><span>uniformity (min ÷ avg)</span></div>
+    <div class="res hero"><b>Ø ${f(2*SG.rB)} m</b><span>spread of each ${multi?`<b style="color:${groups[sc?si:act].col}">${esc(groups[sc?si:act].name)}</b> `:''}downlight on the floor at 50% intensity (field Ø ${f(2*SG.rF)} m at 10%)</span></div>
+    ${nmK.length?`<div class="res"><b style="font-size:1rem;line-height:1.4">${nmK.map(k=>(multi&&!sc?`<span style="color:${groups[k].col}">●</span> `:'')+esc(gLab(k))).join('<br>')}</b><span>${nmK.length>1?'fixtures':'fixture'}</span></div>`:''}
+    <div class="res"><b>${f(SG.md.Iof(1)/h2,0)} lx</b><span>under one fixture alone</span></div>
+    <div class="res"><b>${f(savg,0)} lx</b><span>average, all ${NTs} fixtures${multi?` in ${nOns} group${nOns===1?'':'s'}`:''}</span></div>
+    <div class="res"><b>${f(smn,0)}–${f(smxi,0)} lx</b><span>lowest to highest${WZ>0?`, ${f(WZ)} m wall zone left out`:''}</span></div>
+    <div class="res"><b>${f(suni,2)}</b><span>uniformity (min ÷ avg)</span></div>
     ${cu?`<div class="res"><b>${isFinite(minD)?f(minD):'-'} m</b><span>closest two fixtures</span></div>`:(form==='hex'?`<div class="res"><b>${f(sx)} m</b><span>honeycomb spacing to all six neighbours, rows ${f(sy)} m apart</span></div>`:`<div class="res"><b>${f(sx)} × ${f(sy)} m</b><span>spacing${form==='stagger'?', alternate rows offset':''}${poly?', lights outside the room shape left out':`, ${f(offx)} × ${f(offy)} m to walls`}</span></div>`)}
-    <div class="res"><b>${f(LMT,0)} lm</b><span>${multi?`${NT} fixtures in ${nOn} groups`:`${N} fixtures × ${f(lm,0)} lm`}</span></div>
-    ${PWT>0?`<div class="res"><b>${f(PWT,0)} W</b><span>total power, ${f(PWT/RA,1)} W/m² · ${f(LMT/PWT,0)} lm/W</span></div>`:''}
+    <div class="res"><b>${f(LMTs,0)} lm</b><span>${multi?`${NTs} fixtures in ${nOns} group${nOns===1?'':'s'}`:`${N} fixtures × ${f(lm,0)} lm`}</span></div>
+    ${PWTs>0?`<div class="res"><b>${f(PWTs,0)} W</b><span>total power, ${f(PWTs/RA,1)} W/m² · ${f(LMTs/PWTs,0)} lm/W</span></div>`:''}
   </div>`;
   const gap=cu||form!=='grid'?nnMax>2*rBeam:Math.max(sx,sy)>2*rBeam;
   $('verdict').style.color=uni<.5?'var(--bad)':uni>=.7?'var(--ok)':'var(--ink)';
@@ -233,11 +262,10 @@ function calc(){
   mapView='total';
   const top=lxScale==='auto'?mx:+lxScale;
   for(let i=0;i<vals.length;i++){const c=layers.map&&INS[i]?ramp(vals[i]/top):bg;im.data[i*4]=c[0];im.data[i*4+1]=c[1];im.data[i*4+2]=c[2];im.data[i*4+3]=255}
-  g.putImageData(im,0,0);
+  g.putImageData(im,0,0);invalidateRoom3D();
   $('lgMax').textContent=f(top,0)+' lx'+(lxScale!=='auto'&&mx>top*1.005?'+':'');$('lgMin').textContent='0 lx';
   const mk=(id,v)=>{const e=$(id);e.style.left=Math.min(100,v/top*100)+'%';e.title=f(v,0)+' lx'};
   mk('mkMin',mn);mk('mkAvg',avg);mk('mkMax',mxi);
-  $('lgNote').textContent=lxScale==='auto'?`Colours stretched to this layout's brightest point (${f(mx,0)} lx). Use a fixed scale to compare ceilings or fixtures.`:`Fixed scale: full yellow-white is ${f(top,0)} lx${mx>top*1.005?' (brighter areas are clipped)':''}. Markers show min ${f(mn,0)}, avg ${f(avg,0)}, max ${f(mx,0)} lx.`;
   document.querySelector('.legend').style.visibility=layers.map?'visible':'hidden';
   // overlay (room metres)
   const ov=$('ov');ov.setAttribute('viewBox',`0 0 ${L} ${W}`);
@@ -259,6 +287,9 @@ function calc(){
       if(isA&&i===sel)s+=`<circle cx="${x}" cy="${y}" r="${d*3.2}" fill="none" stroke="var(--beam)" stroke-width="2.5" ${sw}/>`;
       if(isA&&layers.move&&!shapeEdit)hits+=`<circle data-i="${i}" cx="${x}" cy="${y}" r="${Math.max(d*4,Math.min(L,W)*.035)}" fill="transparent" style="cursor:grab"/>`;
     })});
+  let gh='';
+  if(layers.move&&!shapeEdit&&pts.length>1){const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys),hr=Math.max(L,W)*.016,gc=multi?groups[act].col:'var(--beam)';
+    gh=`<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="none" pointer-events="none" stroke="${gc}" stroke-opacity=".7" stroke-dasharray="3 3" stroke-width="1" ${sw}/><g data-gs="1" style="cursor:nwse-resize"><circle cx="${x1}" cy="${y1}" r="${hr*2}" fill="transparent"/><rect x="${x1-hr}" y="${y1-hr}" width="${hr*2}" height="${hr*2}" fill="${gc}" stroke="#16161e" stroke-width="1.5" ${sw}><title>Drag to scale the group (closer / further apart)</title></rect></g>`}
   const AR=!cu&&areaOf(areaOn,{ax:$('ax').value,ay:$('ay').value,aw:$('aw').value,ah:$('ah').value});
   if(AR)s+=`<rect x="${AR.x}" y="${AR.y}" width="${AR.w}" height="${AR.h}" fill="${multi?groups[act].col:'var(--accent)'}" fill-opacity=".06" stroke="${multi?groups[act].col:'var(--accent)'}" stroke-width="1.5" stroke-dasharray="6 4" ${sw}/>`;
   const pd=Q=>'M'+Q.map(q=>q[0]+','+q[1]).join('L')+'Z',wzc=layers.map?'#fff':'var(--mute)';
@@ -271,41 +302,48 @@ function calc(){
     RP.forEach(([x,y],k)=>{hv+=`<g data-pv="${k}" style="cursor:grab"><circle cx="${x}" cy="${y}" r="${hr}" fill="transparent"/><circle cx="${x}" cy="${y}" r="${k===selV?vr*1.4:vr}" fill="${k===selV?'var(--beam)':'var(--accent2)'}" stroke="var(--paper)" stroke-width="2" ${sw}/></g>`})}
   $('stage').style.borderColor=poly?'var(--rule)':'';$('stage').style.borderStyle=poly?'dashed':'';
   ov.style.touchAction=layers.move||shapeEdit?'none':'auto';
-  ov.innerHTML=`<defs><clipPath id="roomclip"><path d="${pd(RP)}"/></clipPath></defs>${mask}<g clip-path="url(#roomclip)">${s}</g>${wzs}${hits}${hv}`;
+  ov.innerHTML=`<defs><clipPath id="roomclip"><path d="${pd(RP)}"/></clipPath></defs>${mask}<g clip-path="url(#roomclip)">${s}</g>${wzs}${hits}${gh}${hv}`;
   dimD={L,W,pts,sel:shapeEdit?-1:sel,map:layers.map,P:poly?RP:null};drawDims();
+  {const cs=getComputedStyle(document.documentElement),v=n=>cs.getPropertyValue(n).trim();
+   isoD={L,W,H,poly:poly?RP:null,ink:v('--ink')||'#c0caf5',mute:v('--mute')||'#787c99',beam:v('--beam')||'#e0af68',
+     lights:GL.flatMap((q,k)=>q?q.pts.map(([x,y],i)=>({x,y,rB:q.rB,col:multi?groups[k].col:v('--beam')||'#e0af68',on:!!groups[k].on,selected:k===act&&i===sel})):[])};
+   $('stage').style.display=layers.iso?'none':'';$('dim').style.display=layers.iso?'none':'';$('iso').hidden=!layers.iso;$('planwrap').classList.toggle('nodim',layers.iso);$('isoNav').hidden=!layers.iso;
+   drawIso3d()}
   const sp=sel>=0&&sel<N?pts[sel]:null;
   if(shapeEdit&&poly){const v=selV>=0&&selV<RP.length?RP[selV]:null;
     $('selbar').innerHTML=(v?`<b>C${selV+1}</b> x <input id="pvx" type="number" inputmode="decimal" step="0.05" value="${f(v[0])}" aria-label="Corner x in metres"> y <input id="pvy" type="number" inputmode="decimal" step="0.05" value="${f(v[1])}" aria-label="Corner y in metres"> m ${RP.length>3?'<button class="chip" id="pvRm" type="button">Remove corner</button>':''}`:'<span class="note" style="margin:0">Drag a corner, or tap + on a wall to add one.</span>')+`<button class="chip" id="shapeDone" type="button" aria-pressed="true">Done editing</button>`}
-  else $('selbar').innerHTML=(sp?`<b>${lab(sel)}</b> x <input id="selx" type="number" inputmode="decimal" step="0.05" value="${f(sp[0])}" aria-label="Light x position in metres"> y <input id="sely" type="number" inputmode="decimal" step="0.05" value="${f(sp[1])}" aria-label="Light y position in metres"> m <button class="chip" id="rmBtn" type="button">Remove</button>`:'')+`<button class="chip" id="addBtn" type="button">Add light</button>`;
+  else $('selbar').innerHTML=(sp?`<b>${lab(sel)}</b> x <input id="selx" type="number" inputmode="decimal" step="0.05" value="${f(sp[0])}" aria-label="Light x position in metres"> y <input id="sely" type="number" inputmode="decimal" step="0.05" value="${f(sp[1])}" aria-label="Light y position in metres"> m <button class="chip tool" id="rmBtn" type="button" aria-label="Remove light" title="Remove light"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>`:'')+`<button class="chip tool" id="addBtn" type="button" aria-label="Add light" title="Add light"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>`+(N>1?`<span class="text-mute">Group spacing</span><button class="chip tool" id="gScDn" type="button" aria-label="Group spacing &minus;10%" title="Bring the lights of this group 10% closer together"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h4M14 8h-4M4.5 6 6 8l-1.5 2M11.5 6 10 8l1.5 2"/></svg></button><button class="chip tool" id="gScUp" type="button" aria-label="Group spacing +10%" title="Spread the lights of this group 10% further apart"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 8H2M10 8h4M3.5 6 2 8l1.5 2M12.5 6 14 8l-1.5 2"/></svg></button>`:'');
   $('planCap').textContent=(poly?`${f(RA,1)} m² ${poly.length}-corner room, `:`${f(L)} × ${f(W)} m, `)+(cu?`${N} lights, custom layout`:` ${nx} × ${ny} ${FORMS[form][0].toLowerCase()}, ${N} lights`);
   // table
-  let rows='';GL.forEach((q,k)=>{if(!q)return;q.pts.forEach(([x,y],i)=>{rows+=`<tr${groups[k].on?'':' style="opacity:.45"'}>${multi?`<td><span style="color:${groups[k].col}">●</span> ${esc(groups[k].name)}</td>`:''}<td>${gtag(k)}${q.labs[i]}</td><td>${f(x)}, ${f(y)}</td><td>${f(2*q.rB)}</td><td>${f(q.lm,0)}</td><td>${groups[k].on?f(E(x,y),0):'off'}</td></tr>`})});
-  $('tbl').innerHTML=`<table><thead><tr>${multi?'<th>Group</th>':''}<th>Fixture</th><th>Position x, y (m)</th><th>Spread Ø (m)</th><th>lm</th><th>Lux below it</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const hasNm=GL.some((q,k)=>q&&!(sc&&k!==si)&&gLab(k));
+  let rows='';GL.forEach((q,k)=>{if(!q||(sc&&k!==si))return;q.pts.forEach(([x,y],i)=>{rows+=`<tr${groups[k].on?'':' style="opacity:.45"'}>${multi?`<td><span style="color:${groups[k].col}">●</span> ${esc(groups[k].name)}</td>`:''}${hasNm?`<td>${esc(gLab(k))}</td>`:''}<td>${gtag(k)}${q.labs[i]}</td><td>${f(x)}, ${f(y)}</td><td>${f(2*q.rB)}</td><td>${f(q.lm,0)}</td><td>${(sc||groups[k].on)?f(Es(x,y),0):'off'}</td></tr>`})});
+  $('tbl').innerHTML=`<table><thead><tr>${multi?'<th>Group</th>':''}${hasNm?'<th>Light</th>':''}<th>Fixture</th><th>Position x, y (m)</th><th>Spread Ø (m)</th><th>lm</th><th>Lux below it</th></tr></thead><tbody>${rows}</tbody></table>`;
   // ---- statistics page ----
   {const F=v=>isFinite(v)?f(v,0):'–',U=(a,b)=>b>0&&isFinite(a)?f(a/b,2):'–';
    const row=(n,av,mn2,mx2,ar)=>`<tr><td>${n}</td><td class="num">${ar?f(ar,1):'–'}</td><td class="num">${F(av)}</td><td class="num">${F(mn2)}</td><td class="num">${F(mx2)}</td><td class="num">${U(mn2,av)}</td><td class="num">${U(mn2,mx2)}</td></tr>`;
-   const zA=cnt/((INS.reduce((s,v)=>s+(v?1:0),0))||1)*RA;
+   const zA=scnt/((sINS.reduce((s,v)=>s+(v?1:0),0))||1)*RA;
    $('surfTbl').innerHTML=`<table><thead><tr><th>Surface</th><th class="num">m²</th><th class="num">Ē lx</th><th class="num">Emin</th><th class="num">Emax</th><th class="num">U₀</th><th class="num">Ud</th></tr></thead><tbody>
-     ${row(`<b>Work plane, ${f(wp)} m</b>`,avg,mn,mxi,zA)}</tbody></table>`;
+     ${row(`<b>Work plane, ${f(wp)} m</b>`,savg,smn,smxi,zA)}</tbody></table>`;
    $('surfCap').textContent=`${f(RA,1)} m² room, ${f(WZ)} m wall zone`;
    // histogram of the work plane (inside the wall zone), with the Suggest target marked
-   const T=+$('tg').value||0,NB=12,loV=Math.floor(Math.max(0,Math.min(mn,T||mn)*.85)/10)*10,hiV=Math.max(mxi,T)*1.02,span=hiV-loV||1,B=new Array(NB).fill(0);let reach=0;
-   for(let i=0;i<vals.length;i++){if(INS[i]!==2)continue;B[Math.max(0,Math.min(NB-1,Math.floor((vals[i]-loV)/span*NB)))]++;if(vals[i]>=T)reach++}
+   const T=+$('tg').value||0,NB=12,loV=Math.floor(Math.max(0,Math.min(smn,T||smn)*.85)/10)*10,hiV=Math.max(smxi,T)*1.02,span=hiV-loV||1,B=new Array(NB).fill(0);let reach=0;
+   for(let i=0;i<svals.length;i++){if(sINS[i]!==2)continue;B[Math.max(0,Math.min(NB-1,Math.floor((svals[i]-loV)/span*NB)))]++;if(svals[i]>=T)reach++}
    const Wd=320,Hd=150,ml=34,mb=26,mt=10,bw=(Wd-ml-6)/NB,bm=Math.max(...B)||1,X=v=>ml+(v-loV)/span*(Wd-ml-6),Yh=c=>mt+(Hd-mt-mb)*(1-c/bm);
-   let svg=B.map((c,k)=>{const col=ramp((loV+(k+.5)/NB*span)/(lxScale==='auto'?mx:+lxScale));return`<rect x="${ml+k*bw+1}" y="${Yh(c)}" width="${bw-2}" height="${Hd-mb-Yh(c)}" rx="2" fill="rgb(${col})"><title>${f(loV+k/NB*span,0)}–${f(loV+(k+1)/NB*span,0)} lx: ${f(c/cnt*100,0)}%</title></rect>`}).join('');
+   let svg=B.map((c,k)=>{const col=ramp((loV+(k+.5)/NB*span)/(lxScale==='auto'?smx:+lxScale));return`<rect x="${ml+k*bw+1}" y="${Yh(c)}" width="${bw-2}" height="${Hd-mb-Yh(c)}" rx="2" fill="rgb(${col})"><title>${f(loV+k/NB*span,0)}–${f(loV+(k+1)/NB*span,0)} lx: ${f(c/scnt*100,0)}%</title></rect>`}).join('');
    svg+=`<line x1="${ml}" y1="${Hd-mb}" x2="${Wd-6}" y2="${Hd-mb}" stroke="var(--rule)"/>`;
    [0,.5,1].forEach(t=>svg+=`<text x="${ml+t*(Wd-ml-6)}" y="${Hd-mb+14}" font-size="10" text-anchor="${t?t<1?'middle':'end':'start'}" fill="var(--mute)">${f(loV+t*span,0)}</text>`);
-   svg+=`<text x="${ml-4}" y="${mt+8}" font-size="10" text-anchor="end" fill="var(--mute)">${f(bm/cnt*100,0)}%</text><text x="${(Wd+ml)/2}" y="${Hd-2}" font-size="10" text-anchor="middle" fill="var(--mute)">lux on the work plane</text>`;
+   svg+=`<text x="${ml-4}" y="${mt+8}" font-size="10" text-anchor="end" fill="var(--mute)">${f(bm/scnt*100,0)}%</text><text x="${(Wd+ml)/2}" y="${Hd-2}" font-size="10" text-anchor="middle" fill="var(--mute)">lux on the work plane</text>`;
    if(T>0)svg+=`<line x1="${X(T)}" y1="${mt-4}" x2="${X(T)}" y2="${Hd-mb}" stroke="var(--bad)" stroke-dasharray="4 3" stroke-width="1.5"/><text x="${X(T)+(X(T)>Wd*.7?-4:4)}" y="${mt+6}" font-size="10" font-weight="700" text-anchor="${X(T)>Wd*.7?'end':'start'}" fill="var(--bad)">target ${f(T,0)}</text>`;
-   $('hist').innerHTML=`<svg viewBox="0 0 ${Wd} ${Hd}" role="img" aria-label="Histogram of lux across the work plane">${svg}</svg><p class="note">${f(reach/cnt*100,0)}% of the work plane reaches the ${f(T,0)} lx target set under Suggest. Each bar is the share of floor area in that lux band.</p>`;
-   $('histCap').textContent=`${f(mn,0)}–${f(mxi,0)} lx, Ē ${f(avg,0)} lx`;}
+   $('hist').innerHTML=`<svg viewBox="0 0 ${Wd} ${Hd}" role="img" aria-label="Histogram of lux across the work plane">${svg}</svg><p class="note">${f(reach/scnt*100,0)}% of the work plane reaches the ${f(T,0)} lx target set under Suggest. Each bar is the share of floor area in that lux band.</p>`;
+   $('histCap').textContent=`${f(smn,0)}–${f(smxi,0)} lx, Ē ${f(savg,0)} lx`;}
   drawSection(L,H,wp,h,pts.map(p=>p[0]),rBeam,rField,a,fr);
   drawOne(h,Iof,rBeam,rField,a,fr);
   wallP={H,th,Iof,gF};drawWall();
   const nm=$('pname').value.trim();
   $('sumTxt').value=[`REMLUX${nm?' - '+nm:''}`,
     `Room: ${poly?`polygon, ${poly.length} corners, ${f(RA,1)} m2 inside a ${f(L)} x ${f(W)} m box (corners: ${poly.map(q=>f(q[0])+' '+f(q[1])).join('; ')})`:f(L)+' x '+f(W)+' m'}, ceiling ${f(H)} m, calculated at ${f(wp)} m above floor`,
-    ...(multi?[`Groups: ${groups.length} (${nOn} on), ${NT} fixtures, ${f(LMT,0)} lm total`].concat(GL.map((q,k)=>{const g=groups[k];if(!q)return`  ${g.name}: invalid settings`;const v=g.vals||{};return`  ${g.name}${g.on?'':' (off)'}: ${q.pts.length} x ${f(q.lm,0)} lm, ${f(q.md.ang,0)} deg, ${g.mode==='custom'?'custom':v.nx+' x '+v.ny+' '+FORMS[g.form||'grid'][0].toLowerCase()}${g.areaOn?` in area ${f(+v.ax)},${f(+v.ay)} ${f(+v.aw)}x${f(+v.ah)} m`:''}${g.phot==='ies'&&g.ies?', IES '+g.ies.file:''}`})).concat(['Selected group details:']):[]),
+    ...(multi?[`Groups: ${groups.length} (${nOn} on), ${NT} fixtures, ${f(LMT,0)} lm total`].concat(GL.map((q,k)=>{const g=groups[k];if(!q)return`  ${g.name}: invalid settings`;const v=g.vals||{};return`  ${g.name}${g.on?'':' (off)'}: ${fixLabel(g.vals)?fixLabel(g.vals)+', ':''}${q.pts.length} x ${f(q.lm,0)} lm, ${f(q.md.ang,0)} deg, ${g.mode==='custom'?'custom':v.nx+' x '+v.ny+' '+FORMS[g.form||'grid'][0].toLowerCase()}${g.areaOn?` in area ${f(+v.ax)},${f(+v.ay)} ${f(+v.aw)}x${f(+v.ah)} m`:''}${g.phot==='ies'&&g.ies?', IES '+g.ies.file:''}`})).concat(['Selected group details:']):[]),
+    ...(fixLabel({brand:$('brand').value,fixname:$('fixname').value})?[`Fixture: ${fixLabel({brand:$('brand').value,fixname:$('fixname').value})}`]:[]),
     `Fixtures: ${N} (${cu?'custom layout':nx+' x '+ny+' '+FORMS[form][0].toLowerCase()}), ${f(lm,0)} lm each, ${f(a,0)} deg beam, diameter ${f(fr*2000,0)} mm`,
     `Photometry: ${phot==='ies'&&ies?'IES file '+ies.file:'generic cos^n beam'}`,
     cu?`Spacing: custom positions, closest pair ${isFinite(minD)?f(minD):'-'} m`:`Spacing: ${f(sx)} x ${f(sy)} m centre to centre; wall offset ${f(offx)} x ${f(offy)} m`,
@@ -360,7 +398,7 @@ function drawOne(h,Iof,rB,rF,a,fr){
   let Ec=0;for(let i=0;i<=80;i++)Ec=Math.max(Ec,E(R*i/80));Ec=Ec||1;
   const EB=E(rB),EF=E(rF);
   let rings='';
-  const S=lxScale==='auto'?Ec:+lxScale;
+  const S=oneScale==='auto'?Ec:+oneScale;
   for(let i=steps;i>=1;i--){const c=ramp(E(R*(i-.5)/steps)/S);rings+=`<circle cx="150" cy="150" r="${k*R*i/steps}" fill="rgb(${c})"/>`}
   const lab='font-size="12" font-weight="600" text-anchor="middle" fill="#fff" stroke="#16161e" stroke-width="3" paint-order="stroke"';
   $('oneHeat').innerHTML=`<svg viewBox="0 0 300 300" role="img" aria-label="Top view of one downlight spread on the floor">
@@ -370,7 +408,7 @@ function drawOne(h,Iof,rB,rF,a,fr){
     <circle cx="150" cy="150" r="${Math.max(2.5,k*fr)}" fill="#16161e"/>
     <text x="150" y="${150-k*rB-6}" ${lab}>50% · Ø ${f(2*rB)} m</text>
     <text x="150" y="${150+k*rF+15}" ${lab}>10% · Ø ${f(2*rF)} m</text>
-  </svg><p class="note">Top view of the spread on the floor, from this one fixture.</p>`;
+  </svg>`;
   const W=300,Ht=210,ml=40,mr=12,mt=16,mb=30,pw=W-ml-mr,ph=Ht-mt-mb;
   const X=x=>ml+(x+R)/(2*R)*pw,Y=e=>mt+ph-(e/Ec)*ph;
   let d='';for(let i=0;i<=80;i++){const x=-R+2*R*i/80;d+=`${i?'L':'M'}${X(x).toFixed(1)},${Y(E(Math.abs(x))).toFixed(1)} `}
@@ -385,8 +423,11 @@ function drawOne(h,Iof,rB,rF,a,fr){
     <text x="${X(-R)}" y="${Y(0)+15}">${f(R,1)} m</text><text x="${X(0)}" y="${Y(0)+15}" text-anchor="middle">0</text><text x="${X(R)}" y="${Y(0)+15}" text-anchor="end">${f(R,1)} m</text></g>
     <text x="${X(0)}" y="${Y(EB)-5}" font-size="11" text-anchor="middle" fill="var(--accent)" font-weight="600" stroke="var(--panel)" stroke-width="3" paint-order="stroke">beam edge ${f(EB,0)} lx</text>
     <text x="${X(0)}" y="${Y(0)+27}" font-size="11" text-anchor="middle" fill="var(--mute)">distance from centre; lux in the plane</text>
-  </svg><p class="note">Lux across the spread (lux). Edges are where intensity drops to 50% (beam, ±${f(rB)} m, ${f(EB,0)} lx) and 10% (field, ±${f(rF)} m, ${f(EF,0)} lx). Lux falls faster than intensity because the light travels further and lands at an angle.</p>`;
-  $('oneCap').textContent=`${f(a,0)}° beam, ${f(h)} m throw, ${f(Ec0,0)} lx at centre`;
+  </svg>`;
+  // colour scale for the top view: same colours as the floor plan legend, from 0 lx to the top of the scale
+  {const grad=Array.from({length:9},(_,i)=>`rgb(${ramp(i/8)}) ${i*12.5}%`).join(','),at=v=>Math.min(100,Math.max(0,v/S*100));
+   $('oneLegend').innerHTML=`<div class="mb-2.5 flex flex-wrap gap-1.5" role="group" aria-label="Colour scale of the top view"><span class="note" style="margin:0;align-self:center">Colour scale</span>${SCALES.map(v=>`<button class="chip" type="button" data-os="${v}" aria-pressed="${String(oneScale)===String(v)}">${v==='auto'?'Auto':v+' lx'}</button>`).join('')}</div><div class="flex items-center gap-2 text-[.82rem] text-mute"><span>0 lx</span><div class="relative h-2.5 flex-1 rounded-full" style="background:linear-gradient(90deg,${grad})" role="img" aria-label="Colour scale of the top view, 0 to ${f(S,0)} lux"><i class="absolute -top-1 -ml-px h-[18px] w-0.5 bg-ink opacity-55" style="left:${at(EF)}%" title="field edge ${f(EF,0)} lx"></i><i class="absolute -top-1 -ml-[1.5px] h-[18px] w-[3px] bg-ink" style="left:${at(EB)}%" title="beam edge ${f(EB,0)} lx"></i></div><span>${f(S,0)} lx${oneScale!=='auto'&&Ec>S*1.005?'+':''}</span></div>`}
+  $('oneCap').textContent=`${fixLabel({brand:$('brand').value,fixname:$('fixname').value})?fixLabel({brand:$('brand').value,fixname:$('fixname').value})+' · ':''}${f(a,0)}° beam, ${f(h)} m throw, ${f(Ec0,0)} lx at centre`;
 }
 function drawWall(){
   const P=wallP;if(!P)return;
@@ -419,16 +460,16 @@ function drawWall(){
   $('wallCap').textContent=`${f(d)} m from wall, ${nn} lights ${f(sp)} m apart`;
 }
 ['wd','ws','wn'].forEach(i=>$(i).addEventListener('input',drawWall));
-const IDS=['L','W','H','wp','wz','nx','ny','ang','lm','pw','fr','dx','dy','tg','wd','ws','wn'];
-const getState=()=>{const o={};IDS.forEach(i=>o[i]=$(i).value);o.mode=mode;o.customPts=customPts;o.layers={...layers};o.phot=phot;o.ies=ies;o.genVals=genVals;o.lxScale=lxScale;o.mapView=mapView;o.poly=poly?poly.map(q=>[q[0],q[1]]):null;if(groups.length){saveActive();o.groups=JSON.parse(JSON.stringify(groups));o.act=act}o.polyK=poly?poly._k:null;o.form=form;return o};
-const setState=o=>{IDS.forEach(i=>{if(o[i]!==undefined)$(i).value=o[i]});if(o.mode)mode=o.mode;if(o.layers)Object.assign(layers,o.layers);customPts=o.customPts||null;genVals=o.genVals||null;ies=o.ies&&o.ies.v?o.ies:null;phot=ies&&o.phot==='ies'?'ies':'gen';if(o.lxScale!==undefined)lxScale=o.lxScale;if(o.mapView)mapView=o.mapView;poly=o.poly&&o.poly.length>2?o.poly.map(q=>[q[0],q[1]]):null;if(poly)poly._k=o.polyK||'custom';shapeEdit=false;selV=-1;if(o.groups&&o.groups.length){groups=JSON.parse(JSON.stringify(o.groups));loadGroup(o.act||0)}else{groups=[];act=0;areaOn=false}form=FORMS[o.form]?o.form:'grid';sel=-1;prevL=0;calc()};
+const IDS=['L','W','H','wp','wz','nx','ny','ang','lm','pw','fr','dx','dy','tg','wd','ws','wn','brand','fixname'];
+const getState=()=>{const o={};IDS.forEach(i=>o[i]=$(i).value);o.mode=mode;o.customPts=customPts;o.layers={...layers};o.phot=phot;o.ies=ies;o.genVals=genVals;o.lxScale=lxScale;o.oneScale=oneScale;o.mapView=mapView;o.poly=poly?poly.map(q=>[q[0],q[1]]):null;if(groups.length){saveActive();o.groups=JSON.parse(JSON.stringify(groups));o.act=act}o.polyK=poly?poly._k:null;o.form=form;return o};
+const setState=o=>{IDS.forEach(i=>{if(o[i]!==undefined)$(i).value=o[i]});if(o.mode)mode=o.mode;if(o.layers)Object.assign(layers,o.layers);customPts=o.customPts||null;genVals=o.genVals||null;ies=o.ies&&o.ies.v?o.ies:null;phot=ies&&o.phot==='ies'?'ies':'gen';if(o.lxScale!==undefined)lxScale=o.lxScale;if(o.oneScale!==undefined)oneScale=o.oneScale;if(o.mapView)mapView=o.mapView;poly=o.poly&&o.poly.length>2?o.poly.map(q=>[q[0],q[1]]):null;if(poly)poly._k=o.polyK||'custom';shapeEdit=false;selV=-1;if(o.groups&&o.groups.length){groups=JSON.parse(JSON.stringify(o.groups));loadGroup(o.act||0)}else{groups=[];act=0;areaOn=false}form=FORMS[o.form]?o.form:'grid';sel=-1;prevL=0;calc()};
 const DEF=getState();
 const esc=t=>t.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const rooms=()=>{try{return JSON.parse(localStorage.getItem('dlc:rooms')||'{}')}catch(e){return{}}};
 const putRooms=r=>{try{localStorage.setItem('dlc:rooms',JSON.stringify(r))}catch(e){}};
 function renderSaved(){
   const k=Object.keys(rooms());
-  $('saved').innerHTML=k.length?k.map(n=>`<span class="saved"><button class="chip" type="button" data-load="${encodeURIComponent(n)}">${esc(n)}</button><button class="chip" type="button" data-del="${encodeURIComponent(n)}" aria-label="Delete ${esc(n)}">×</button></span>`).join(''):'<p class="note">No saved rooms yet.</p>';
+  $('saved').innerHTML=k.length?k.map(n=>`<span class="saved"><button class="chip" type="button" data-load="${encodeURIComponent(n)}">${esc(n)}</button><button class="chip" type="button" data-del="${encodeURIComponent(n)}" aria-label="Delete ${esc(n)}">×</button></span>`).join(''):'';
 }
 function suggest(){
   const L=+$('L').value,W=+$('W').value,H=+$('H').value,wp=+$('wp').value,T=+$('tg').value,h=H-wp,md=model();
@@ -459,11 +500,12 @@ document.addEventListener('click',e=>{
     if(ys.length>1)$('ws').value=f((ys[ys.length-1]-ys[0])/(ys.length-1));
     $('wn').value=Math.min(10,ys.length);drawWall();
   }
+  if(t.id==='gScDn'||t.id==='gScUp'){toCustom();customPts=scalePts(customPts,t.id==='gScUp'?1.1:1/1.1);calc()}
   if(t.id==='addBtn'){toCustom();customPts.push([+$('L').value/2,+$('W').value/2]);sel=customPts.length-1;calc()}
   const gs=t.closest('[data-gsel]');if(gs){saveActive();loadGroup(+gs.dataset.gsel);calc();return}
   const sh=t.closest('[data-shape]');if(sh){const k=sh.dataset.shape,L=+$('L').value,W=+$('W').value;
     if(k==='rect'){poly=null;shapeEdit=false;selV=-1}
-    else if(k==='edit'){shapeEdit=!shapeEdit;selV=-1;if(shapeEdit&&!poly){poly=rectPoly(L,W);poly._k='custom'}if(shapeEdit){showPage('visualize',true);setTimeout(()=>$('stage').scrollIntoView({behavior:'smooth',block:'center'}),80)}}
+    else if(k==='edit'){shapeEdit=!shapeEdit;selV=-1;if(shapeEdit&&!poly){poly=rectPoly(L,W);poly._k='custom'}if(shapeEdit){layers.iso=false;showPage('visualize',true);setTimeout(()=>$('stage').scrollIntoView({behavior:'smooth',block:'center'}),80)}}
     else{poly=shapePreset(k,L,W);poly._k=k;selV=-1;if(mode==='custom')mode='even'}
     prevL=L;prevW=W;calc()}
   if(t.id==='shapeDone'){shapeEdit=false;selV=-1;calc()}
@@ -480,8 +522,16 @@ document.addEventListener('change',e=>{
   toCustom();const p=customPts[sel];if(!p)return;
   const v=+e.target.value;if(id==='selx')p[0]=v;else p[1]=v;calc();
 });
-const ovEl=$('ov');let drag=-1,moved=false,raf=0;
-let dragV=-1;
+const ovEl=$('ov');
+initPlanImage({setRoom:P=>{poly=P.map(([x,y])=>[x,y]);poly._k='custom';selV=-1;normPoly();calc()},fitRoom:(L,W)=>{if(poly)return false;$('L').value=L;$('W').value=W;calc();return true}});
+let drag=-1,moved=false,raf=0;
+let dragV=-1,gDrag=null,gScale=null;
+// scale light positions by k about their centroid; k is reduced so every light stays inside the room
+const scalePts=(base,k0)=>{const L=+$('L').value,W=+$('W').value,n=base.length,cx=base.reduce((s,p)=>s+p[0],0)/n,cy=base.reduce((s,p)=>s+p[1],0)/n;let k=k0;
+  base.forEach(([x,y])=>{const dx=x-cx,dy=y-cy;
+    if(dx*k+cx>L)k=Math.min(k,(L-cx)/dx);if(dx*k+cx<0)k=Math.min(k,-cx/dx);
+    if(dy*k+cy>W)k=Math.min(k,(W-cy)/dy);if(dy*k+cy<0)k=Math.min(k,-cy/dy)});
+  return base.map(([x,y])=>[cx+(x-cx)*k,cy+(y-cy)*k])};
 const toPlan=e=>{const r=ovEl.getBoundingClientRect(),L=+$('L').value,W=+$('W').value;let x=(e.clientX-r.left)/r.width*L,y=(e.clientY-r.top)/r.height*W;
   if(layers.snap){x=Math.round(x*10)/10;y=Math.round(y*10)/10}return[Math.min(L,Math.max(0,x)),Math.min(W,Math.max(0,y))]};
 ovEl.addEventListener('pointerdown',e=>{
@@ -490,21 +540,38 @@ ovEl.addEventListener('pointerdown',e=>{
     else if(pv)dragV=selV=+pv.dataset.pv;
     else{selV=-1;calc();return}
     ovEl.setPointerCapture(e.pointerId);e.preventDefault();calc();return}
+  const gs=e.target.closest('[data-gs]');
+  if(gs){toCustom();const r=ovEl.getBoundingClientRect(),L=+$('L').value,W=+$('W').value,n=customPts.length,
+      cx=customPts.reduce((s,p)=>s+p[0],0)/n,cy=customPts.reduce((s,p)=>s+p[1],0)/n,px=(e.clientX-r.left)/r.width*L,py=(e.clientY-r.top)/r.height*W,d0=Math.hypot(px-cx,py-cy);
+    if(d0>1e-6){gScale={pts:customPts.map(p=>[p[0],p[1]]),cx,cy,d0};ovEl.setPointerCapture(e.pointerId);e.preventDefault()}return}
   const t=e.target.closest('[data-i]');
   if(!t){if(sel!==-1){sel=-1;calc()}return}
-  drag=+t.dataset.i;sel=drag;moved=false;ovEl.setPointerCapture(e.pointerId);e.preventDefault();calc();
+  drag=+t.dataset.i;sel=drag;moved=false;
+  gDrag=null;
+  if(layers.group||e.shiftKey){toCustom();const r=ovEl.getBoundingClientRect();gDrag={pts:customPts.map(p=>[p[0],p[1]]),x0:(e.clientX-r.left)/r.width*(+$('L').value),y0:(e.clientY-r.top)/r.height*(+$('W').value)}}
+  ovEl.setPointerCapture(e.pointerId);e.preventDefault();calc();
 });
 ovEl.addEventListener('pointermove',e=>{
   if(dragV>=0&&poly){poly[dragV]=toPlan(e);poly._k='custom';if(!raf)raf=requestAnimationFrame(()=>{raf=0;calc()});return}
+  if(gScale){const r=ovEl.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*(+$('L').value),y=(e.clientY-r.top)/r.height*(+$('W').value);
+    customPts=scalePts(gScale.pts,Math.max(.05,Math.hypot(x-gScale.cx,y-gScale.cy)/gScale.d0));
+    if(!raf)raf=requestAnimationFrame(()=>{raf=0;calc()});return}
   if(drag<0)return;
   if(!moved){toCustom();moved=true}
   const r=ovEl.getBoundingClientRect(),L=+$('L').value,W=+$('W').value;
   let x=(e.clientX-r.left)/r.width*L,y=(e.clientY-r.top)/r.height*W;
+  if(gDrag){
+    let dx=x-gDrag.x0,dy=y-gDrag.y0;
+    if(layers.snap){dx=Math.round(dx*10)/10;dy=Math.round(dy*10)/10}
+    const xs=gDrag.pts.map(p=>p[0]),ys=gDrag.pts.map(p=>p[1]);
+    dx=Math.min(L-Math.max(...xs),Math.max(-Math.min(...xs),dx));dy=Math.min(W-Math.max(...ys),Math.max(-Math.min(...ys),dy));
+    customPts=gDrag.pts.map(([px,py])=>[px+dx,py+dy]);
+    if(!raf)raf=requestAnimationFrame(()=>{raf=0;calc()});return}
   if(layers.snap){x=Math.round(x*10)/10;y=Math.round(y*10)/10}
   customPts[drag]=[Math.min(L,Math.max(0,x)),Math.min(W,Math.max(0,y))];
   if(!raf)raf=requestAnimationFrame(()=>{raf=0;calc()});
 });
-const endDrag=()=>{drag=-1;if(dragV>=0){dragV=-1;normPoly();calc()}};
+const endDrag=()=>{drag=-1;gDrag=null;gScale=null;if(dragV>=0){dragV=-1;normPoly();calc()}};
 ovEl.addEventListener('pointerup',endDrag);ovEl.addEventListener('pointercancel',endDrag);
 $('tg').addEventListener('change',()=>calc());
 $('tg').addEventListener('input',()=>{try{localStorage.setItem('dlc:last',JSON.stringify(getState()))}catch(e){}});
@@ -512,14 +579,15 @@ $('pname').addEventListener('input',calc);
 document.addEventListener('input',e=>{if(e.target.classList&&e.target.classList.contains('gname')&&groups[act]){groups[act].name=e.target.value.slice(0,30)||'Group '+(act+1);document.querySelectorAll('.grow.on .gsel span').forEach(x=>x.textContent=groups[act].name)}});
 document.addEventListener('change',e=>{if(e.target.classList&&e.target.classList.contains('gname')){e.target.blur();calc()}});
 try{const l=JSON.parse(localStorage.getItem('dlc:last')||'null');if(l)setState(l)}catch(e){}
-const PAGES=['room','fixture','visualize','stats'];let page='visualize';
+const PAGES=['room','fixture','visualize','stats','spot'];let page='visualize';
 function showPage(p,nav){if(p==='layout')p='visualize';page=PAGES.includes(p)?p:'visualize';PAGES.forEach(k=>$('pg-'+k).hidden=k!==page);
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.page===page)));
-  if(nav&&location.hash!=='#'+page)location.hash=page;requestAnimationFrame(drawDims)}
+  if(nav&&location.hash!=='#'+page)location.hash=page;requestAnimationFrame(()=>{drawDims();drawIso3d()})}
 document.addEventListener('click',e=>{const b=e.target.closest('.tab');if(b){showPage(b.dataset.page,true);scrollTo({top:0,behavior:'smooth'})}});
 addEventListener('hashchange',()=>showPage(location.hash.slice(1)));
 showPage(location.hash.slice(1));
 renderSaved();
 calc();
-try{new ResizeObserver(()=>drawDims()).observe($('stage'))}catch(e){addEventListener('resize',drawDims)}
+attachIsoControls($('planwrap'),$('iso'),isoView,drawIso3d);initRoomThree(drawIso3d);
+try{new ResizeObserver(()=>{drawDims();drawIso3d()}).observe($('planwrap'))}catch(e){addEventListener('resize',()=>{drawDims();drawIso3d()})}
 export {};

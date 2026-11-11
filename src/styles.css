@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Title font: Nothing 5x7 dot-matrix (regular weight only) */
+@font-face {
+  font-family: "Nothing";
+  src: url("./assets/fonts/nothing-font-5x7.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ---------------------------------------------------------------------------
    Design tokens (Tokyo Night). Only these colours exist: bg-panel, text-mute,
    border-rule, … The default Tailwind palette is switched off on purpose.
@@ -20,9 +29,10 @@
   --color-accent2: #bb9af7;
   --color-ok: #9ece6a;
   --color-bad: #f7768e;
+  --color-title: #ece9e2;   /* REMLUX logo: one off-white tone, no accent */
 
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --font-display: Doto, ui-monospace, monospace;
+  --font-display: Nothing, Doto, ui-monospace, monospace;
 
   /* the app's two layout breakpoints */
   --breakpoint-sm: 560px; /* results in 3 columns, one-downlight views side by side */
@@ -35,12 +45,38 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Day mode: Catppuccin Latte. Same token names, so every bg-panel / text-ink / var(--ink) follows.
+   Night (Tokyo Night, above) is the default; src/ui/theme.ts sets data-theme on <html>.
+   The heat map and the white / dark overlays drawn on it keep their false-colour palette in both modes.
+   --------------------------------------------------------------------------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-paper: #dce0e8;   /* crust */
+  --color-panel: #eff1f5;   /* base */
+  --color-raise: #e6e9ef;   /* mantle */
+  --color-ink: #4c4f69;     /* text */
+  --color-mute: #6c6f85;    /* subtext0 */
+  --color-rule: #ccd0da;    /* surface0 */
+  --color-beam: #df8e1d;    /* yellow */
+  --color-accent: #1e66f5;  /* blue */
+  --color-accent2: #8839ef; /* mauve */
+  --color-ok: #40a02b;      /* green */
+  --color-bad: #d20f39;     /* red */
+  --color-title: #4c4f69;   /* text: off-white would vanish on the light page */
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 10px 30px -18px rgba(76, 79, 105, .35);
+  --shadow-float: 0 8px 24px -14px rgba(76, 79, 105, .45);
+}
+#themeBtn .moon { display: none; }
+:root[data-theme="light"] #themeBtn .sun { display: none; }
+:root[data-theme="light"] #themeBtn .moon { display: block; }
+
+/* ---------------------------------------------------------------------------
    Base: element defaults
    --------------------------------------------------------------------------- */
 @layer base {
   :root {
     /* short aliases: the script writes these into inline SVG (fill="var(--ink)") */
-    --paper: var(--color-paper); --panel: var(--color-panel); --raise: var(--color-raise);
+    --title: var(--color-title); --paper: var(--color-paper); --panel: var(--color-panel); --raise: var(--color-raise);
     --ink: var(--color-ink); --mute: var(--color-mute); --rule: var(--color-rule);
     --beam: var(--color-beam); --accent: var(--color-accent); --accent2: var(--color-accent2);
     --ok: var(--color-ok); --bad: var(--color-bad);
@@ -98,6 +134,10 @@
     font-family: inherit;
     line-height: inherit;
     padding: 6px 11px;
+    &.tool { @apply justify-center rounded-xl p-0 size-11; }
+    &.tool .ic { @apply size-[1.45rem]; }
+    &:has(.ic) { @apply inline-flex items-center gap-1.5; }
+    & .ic { @apply size-[1em] shrink-0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
     &[aria-pressed=true] { @apply bg-accent border-accent text-paper font-semibold; }
   }
 
@@ -181,8 +221,8 @@
     & i:not(:last-child) { -webkit-backdrop-filter: blur(var(--b)); backdrop-filter: blur(var(--b)); }
     &.top i:not(:last-child) { mask-image: linear-gradient(to bottom, #000 0, #000 calc(var(--e) * .4), transparent var(--e)); }
     &.bot i:not(:last-child) { mask-image: linear-gradient(to top, #000 0, #000 calc(var(--e) * .4), transparent var(--e)); }
-    &.top i:last-child { background: linear-gradient(to bottom, rgba(22, 22, 30, .75), rgba(22, 22, 30, 0)); }
-    &.bot i:last-child { background: linear-gradient(to top, rgba(22, 22, 30, .75), rgba(22, 22, 30, 0)); }
+    &.top i:last-child { background: linear-gradient(to bottom, color-mix(in srgb, var(--color-paper) 75%, transparent), transparent); }
+    &.bot i:last-child { background: linear-gradient(to top, color-mix(in srgb, var(--color-paper) 75%, transparent), transparent); }
   }
 
   /* statistics tables on small phones */
