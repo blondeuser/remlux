@@ -1,5 +1,7 @@
 # REMLUX: Business logic
 
+Related: [[REMLUX/CLAUDE]] · [[REMLUX/PROGRESS]] · [[_global/INDEX]]
+
 What the app does and the domain rules behind it. **Rules for working on the code** are in `CLAUDE.md`; **project status** is in `PROGRESS.md`. Update this file when a calculation, rule, range or product decision changes.
 
 ## Product

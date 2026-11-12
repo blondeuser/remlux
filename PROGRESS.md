@@ -2,6 +2,8 @@
 
 Living status of the project. **Update this file at the end of every work session**: tick tasks, add a log entry, move items between sections. Rules and conventions live in `CLAUDE.md`; business logic (calculations, domain rules, product decisions) in `MEMORY.md`.
 
+Related: [[REMLUX/CLAUDE]] · [[REMLUX/MEMORY]] · [[_global/INDEX]]
+
 _Last updated: 2026-11-12_
 
 ## Status
@@ -88,6 +90,7 @@ _Last updated: 2026-11-12_
 ## Log
 
 ### 2026-11-12
+- **Obsidian / Claude global setup** (outside the repo, in `M:\CODE`): vault root `CLAUDE.md` (global rules), `_global/` (INDEX, user, learnings, project templates), Obsidian ignore filters. REMLUX docs now link to the global notes. No code changed.
 - **three.js render view** (uncommitted): a toggle button in each 3D viewport (room *3D view*, *Wall in 3D*) switches the drawing to three.js 0.186.0 (new dependency, lazy chunk of 187 kB gzipped; `import('three')` only on first use). A WebGL canvas sits under the 2D canvas; the camera is derived from the existing `IsoView` (tested: matches the 2D projection in 4 views), so orbit/pan/zoom, picking and drags are unchanged and the 2D canvas only draws labels and handles (`threeMode`). Unlit materials (colours stay equal to the lux legend), instanced downlights (a few draw calls per group), on-demand rendering, GPU memory freed on toggle off. Falls back to the 2D view if WebGL fails. Checked in Chrome (room + spot, night + day, floor-ring and Shift drag, Reset transform, persistence after reload). Not done: no automated visual test of the WebGL output (jsdom has no WebGL); the spot body is small at default size and mostly hidden by its grab ring. `build:single` is 380 MB because the fixture library is inlined (unchanged by this; three adds ~0.7 MB).
 - **3D viewport review + Spot on wall transform** (uncommitted): the 3D views are canvas-2D (no three.js), so the review applied the general render rules. Done: camera input redraws at most once per frame (`attachIsoControls`), drags on Spot on wall recalculate once per frame, canvas backing store resized only when the size changes (`sizeCanvas`, was reallocated every frame), `localStorage` save debounced 250 ms (it holds the IES curve). Spot y was locked in 3D (spot moved only parallel to the wall): now Shift + drag the spot, or drag the ring on the floor under it, moves x / y (`onPlaneZ`, tested); **Reset transform** button restores position and aim only. Not done: room 3D view still redraws the full heat map each frame (cheap at current sizes).
 - **Spot on wall: 3D view + Reset** (uncommitted): the flat wall elevation is now a 3D view (`src/render/spot3d.ts`): lit wall (Lighting effect / Lux map mapped onto it), floor strip with grid, spot body along the beam axis, beam cone, 50% / 10% outlines, drop lines, size labels; orbit / pan / zoom / home handles and mouse controls reused from the room 3D view (`attachIsoControls` got an optional `home` view; legacy call unchanged). Aim cross and spot stay draggable in 3D (exact inverse of the orthographic camera onto the wall plane / the spot's plane), hover lux readout kept. *Reset to defaults* button in the Wall card. Checked in Chrome at 1280 / 400 px, night and day: drags, orbit, hover and reset. 91 tests pass (2 new for the outline geometry), typecheck clean.

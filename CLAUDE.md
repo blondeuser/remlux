@@ -2,6 +2,8 @@
 
 Web app for calculating and visualizing how light spreads in a room, with downlights organized in groups, in the spirit of DIALux. For early lighting layout; final results get confirmed in DIALux with the real IES/LDT files.
 
+Part of the `M:\CODE` Obsidian vault. Global rules: [[CLAUDE]] (vault root); cross-project memory: [[_global/INDEX]], [[_global/user]], [[_global/learnings]]. This file adds project rules and wins on conflict.
+
 Project docs, one job each:
 
 | File | Holds | Update when |
